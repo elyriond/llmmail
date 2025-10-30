@@ -24,6 +24,7 @@ function App() {
   const [clarifyingQuestions, setClarifyingQuestions] = useState([]);
   const [pendingBrief, setPendingBrief] = useState(null);
   const [generationStage, setGenerationStage] = useState(''); // Progress indicator
+  const [previewMode, setPreviewMode] = useState('desktop');
 
   // Load templates on mount
   useEffect(() => {
@@ -586,6 +587,32 @@ function App() {
                     </button>
                   </>
                 )}
+                {viewMode === 'preview' && (
+                  <>
+                    <button
+                      onClick={() => setPreviewMode('desktop')}
+                      aria-pressed={previewMode === 'desktop'}
+                      className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
+                        previewMode === 'desktop'
+                          ? 'bg-gradient-to-r from-purple-500 to-pink-500 border-transparent shadow-lg shadow-purple-500/30'
+                          : 'bg-white/5 hover:bg-white/10 border-white/10'
+                      }`}
+                    >
+                      💻 Desktop
+                    </button>
+                    <button
+                      onClick={() => setPreviewMode('mobile')}
+                      aria-pressed={previewMode === 'mobile'}
+                      className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
+                        previewMode === 'mobile'
+                          ? 'bg-gradient-to-r from-purple-500 to-pink-500 border-transparent shadow-lg shadow-purple-500/30'
+                          : 'bg-white/5 hover:bg-white/10 border-white/10'
+                      }`}
+                    >
+                      📱 Mobile
+                    </button>
+                  </>
+                )}
                 <div className="flex border border-white/10 rounded-lg overflow-hidden">
                   <button
                     onClick={() => setViewMode('preview')}
@@ -608,9 +635,8 @@ function App() {
             </div>
 
             <div className="flex-1 overflow-auto p-6 bg-gradient-to-br from-slate-800/50 to-slate-900/50">
-              {emailHtml ? (
-                viewMode === 'code' ? (
-                  /* Code View */
+              {viewMode === 'code' ? (
+                emailHtml ? (
                   <div className="bg-slate-900 rounded-lg border border-white/10 overflow-hidden h-full">
                     <div className="px-4 py-2 bg-black/40 border-b border-white/10 flex items-center justify-between">
                       <span className="text-xs text-gray-400 font-mono">HTML + Mapp Template</span>
@@ -626,22 +652,45 @@ function App() {
                     </pre>
                   </div>
                 ) : (
-                  /* Preview */
-                  <div className="bg-white rounded-lg shadow-2xl overflow-auto h-full max-w-2xl mx-auto">
-                    <InteractiveEmailPreview
-                      html={emailHtml}
-                      onRegenerateImage={handleRegenerateImage}
-                      isGeneratingImage={isGeneratingImage}
-                    />
+                  <div className="bg-slate-900/60 border border-white/5 rounded-lg h-full flex items-center justify-center">
+                    <p className="text-sm text-gray-400">Generate an email to view the template code.</p>
                   </div>
                 )
               ) : (
-                <div className="max-w-xl mx-auto bg-white rounded-lg shadow-2xl min-h-full">
-                  <InteractiveEmailPreview
-                    html={null}
-                    onRegenerateImage={handleRegenerateImage}
-                    isGeneratingImage={isGeneratingImage}
-                  />
+                <div
+                  className={`transition-all duration-300 ${
+                    previewMode === 'mobile' ? 'flex justify-center py-6' : 'mx-auto'
+                  }`}
+                >
+                  <div
+                    className={`transition-all duration-300 ${
+                      previewMode === 'mobile'
+                        ? 'w-[380px] max-w-full'
+                        : 'max-w-2xl w-full'
+                    }`}
+                  >
+                    <div
+                      className={`transition-all duration-300 ${
+                        previewMode === 'mobile'
+                          ? 'bg-slate-900 rounded-[32px] p-4 shadow-2xl border border-slate-800 min-h-full flex items-center justify-center'
+                          : 'bg-white rounded-lg shadow-2xl border border-white/10 min-h-full'
+                      }`}
+                    >
+                      <div
+                        className={`overflow-hidden ${
+                          previewMode === 'mobile'
+                            ? 'rounded-[22px] bg-white'
+                            : 'rounded-lg bg-white'
+                        }`}
+                      >
+                        <InteractiveEmailPreview
+                          html={emailHtml || null}
+                          onRegenerateImage={handleRegenerateImage}
+                          isGeneratingImage={isGeneratingImage}
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
