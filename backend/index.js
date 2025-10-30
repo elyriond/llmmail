@@ -24,10 +24,10 @@ app.use('/api', dressipiRoutes);
 const imageRoutes = require('./routes/imageRoutes');
 app.use('/api', imageRoutes);
 
-// Generate email campaign endpoint (WITH CREATIVE DIRECTOR)
+// Generate email campaign endpoint with SSE progress (WITH CREATIVE DIRECTOR)
 app.post('/api/generate-email', async (req, res) => {
   try {
-    const { prompt, lookAndFeel } = req.body;
+    const { prompt, lookAndFeel, streamProgress } = req.body;
 
     if (!prompt) {
       return res.status(400).json({
@@ -50,24 +50,49 @@ app.post('/api/generate-email', async (req, res) => {
       };
     }
 
-    const result = await generateEmailCampaign(prompt, lookAndFeel, companySettings);
+    // If client wants SSE progress streaming
+    if (streamProgress) {
+      // Set up SSE
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
 
-    // Handle requiresSettings response
-    if (result.requiresSettings) {
-      return res.json(result);
+      // Progress callback sends SSE messages with type and data
+      const onProgress = (message, type = 'progress', data = null) => {
+        res.write(`data: ${JSON.stringify({ type, message, data })}\n\n`);
+      };
+
+      try {
+        const result = await generateEmailCampaign(prompt, lookAndFeel, companySettings, onProgress);
+
+        // Send final result
+        res.write(`data: ${JSON.stringify({ type: 'complete', result })}\n\n`);
+        res.end();
+      } catch (error) {
+        res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+        res.end();
+      }
+    } else {
+      // Standard JSON response (no progress streaming)
+      const result = await generateEmailCampaign(prompt, lookAndFeel, companySettings);
+
+      // Handle requiresSettings response
+      if (result.requiresSettings) {
+        return res.json(result);
+      }
+
+      // Handle needsClarification response
+      if (result.needsClarification) {
+        return res.json(result);
+      }
+
+      // Handle error
+      if (!result.success) {
+        return res.status(500).json(result);
+      }
+
+      res.json(result);
     }
-
-    // Handle needsClarification response
-    if (result.needsClarification) {
-      return res.json(result);
-    }
-
-    // Handle error
-    if (!result.success) {
-      return res.status(500).json(result);
-    }
-
-    res.json(result);
   } catch (error) {
     console.error('API Error:', error);
     res.status(500).json({
@@ -80,7 +105,7 @@ app.post('/api/generate-email', async (req, res) => {
 // Generate email with user answers to clarifying questions
 app.post('/api/generate-email-with-answers', async (req, res) => {
   try {
-    const { brief, answers, lookAndFeel } = req.body;
+    const { brief, answers, lookAndFeel, streamProgress } = req.body;
 
     if (!brief || !answers) {
       return res.status(400).json({
@@ -91,24 +116,38 @@ app.post('/api/generate-email-with-answers', async (req, res) => {
 
     console.log('🔄 Generating email with user answers...');
 
-    // Get company settings
-    const { brandProfileService } = require('./services/database');
-    const profile = brandProfileService.get();
+    // If client wants SSE progress streaming
+    if (streamProgress) {
+      // Set up SSE
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
 
-    let companySettings = null;
-    if (profile) {
-      companySettings = {
-        full_scan_markdown: profile.full_scan_markdown
+      // Progress callback sends SSE messages with type and data
+      const onProgress = (message, type = 'progress', data = null) => {
+        res.write(`data: ${JSON.stringify({ type, message, data })}\n\n`);
       };
+
+      try {
+        const result = await generateCampaignWithAnswers(brief, answers, lookAndFeel, onProgress);
+
+        // Send final result
+        res.write(`data: ${JSON.stringify({ type: 'complete', result })}\n\n`);
+        res.end();
+      } catch (error) {
+        res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+        res.end();
+      }
+    } else {
+      // Standard JSON response (no progress streaming)
+      const result = await generateCampaignWithAnswers(brief, answers, lookAndFeel);
+
+      if (!result.success) {
+        return res.status(500).json(result);
+      }
+
+      res.json(result);
     }
-
-    const result = await generateCampaignWithAnswers(brief, answers, lookAndFeel, companySettings);
-
-    if (!result.success) {
-      return res.status(500).json(result);
-    }
-
-    res.json(result);
   } catch (error) {
     console.error('API Error:', error);
     res.status(500).json({

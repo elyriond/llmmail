@@ -32,6 +32,10 @@ async function analyzeContent(url) {
  */
 async function extractTechnicalStyles(url, htmlContent) {
   console.log('Extracting technical styles from code with Gemini 2.5 Flash...');
+
+  // Load HTML with cheerio for parsing
+  const $ = cheerio.load(htmlContent);
+
   // 2. Fetch all CSS content without truncation
   const stylesheetUrls = [];
   $('link[rel="stylesheet"]').each((i, el) => {

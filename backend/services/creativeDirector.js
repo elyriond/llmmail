@@ -21,21 +21,17 @@ async function analyzeAndEnhancePrompt(userPrompt, companySettings = null) {
     // Build context with company settings
     let contextMessage = `User Request: "${userPrompt}"\n\n`;
 
-    if (companySettings && companySettings.corporate_identity) {
-      const identity = companySettings.corporate_identity;
-      const toneOfVoice = companySettings.tone_of_voice || {};
+    // Use the full markdown brand analysis if available
+    if (companySettings && companySettings.full_scan_markdown) {
+      contextMessage += `=== BRAND PROFILE & STYLE GUIDE ===\n`;
+      contextMessage += `${companySettings.full_scan_markdown}\n`;
+      contextMessage += `=== END BRAND PROFILE ===\n\n`;
 
-      contextMessage += `Company Profile:\n`;
-      contextMessage += `- Company: ${identity.companyName || 'Not specified'}\n`;
-      contextMessage += `- Brand Colors: Primary ${identity.brandColors?.primary || 'N/A'}, Secondary ${identity.brandColors?.secondary || 'N/A'}\n`;
-      contextMessage += `- Typography: ${identity.typography?.primaryFont || 'Not specified'}\n`;
-      contextMessage += `- Tagline: ${identity.tagline || 'Not specified'}\n`;
-      contextMessage += `- Tone of Voice: ${toneOfVoice.style || 'Not specified'}\n`;
-      contextMessage += `- Language: ${toneOfVoice.language || 'Not specified'}\n`;
-
-      if (toneOfVoice.imageStyle) {
-        contextMessage += `- Visual Style: ${toneOfVoice.imageStyle}\n`;
+      if (companySettings.website_url) {
+        contextMessage += `Brand Website: ${companySettings.website_url}\n\n`;
       }
+
+      contextMessage += `IMPORTANT: Use the brand information above to ensure the campaign aligns with the brand's colors, typography, tone of voice, and visual style.\n`;
     } else {
       contextMessage += `\n⚠️ Company settings are not configured. User needs to set up their profile first.\n`;
     }
@@ -126,10 +122,21 @@ async function generateContentFromBrief(briefText) {
   try {
     console.log('✍️ Generating content from brief...');
 
-    const contentPrompt = `You are an expert email copywriter. Based on the following campaign brief, create the email content.
+    // Load the enhanced email content generation prompt
+    const prompt = loadPrompt('email_content_generation');
 
-CAMPAIGN BRIEF:
+    const contentPrompt = `Based on the following detailed campaign brief from the Creative Director, create the email content.
+
+CAMPAIGN BRIEF FROM CREATIVE DIRECTOR:
 ${briefText}
+
+IMPORTANT:
+- Follow ALL guidance in the campaign brief including tone, brand voice, personalization strategy, and content structure
+- Use the brand keywords and personality traits mentioned in the brief
+- Match the specified tone exactly (e.g., if "sophisticated yet accessible", write accordingly)
+- Implement the personalization strategy outlined in the brief
+- Follow the content structure recommended (hero-cta, story-based, product-showcase, etc.)
+- Use the suggested subject line approach and preheader strategy
 
 Generate the email content with clear sections for: Subject Line, Preheader, Headline, Body Copy, Call-to-Action, and Footer.`;
 
@@ -138,7 +145,7 @@ Generate the email content with clear sections for: Subject Line, Preheader, Hea
       messages: [
         {
           role: 'system',
-          content: 'You are an expert email copywriter. Generate compelling, conversion-focused email content.'
+          content: prompt.systemPrompt // Use the enhanced prompt with brand voice instructions
         },
         { role: 'user', content: contentPrompt }
       ],

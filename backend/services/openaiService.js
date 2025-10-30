@@ -53,15 +53,22 @@ async function generateEmailContent(userPrompt, lookAndFeel = {}) {
     // Load prompt from file
     const prompt = loadPrompt('email_content_generation');
 
-    const completion = await openai.chat.completions.create({
-      model: prompt.settings.model || "gpt-4o",
+    const modelToUse = prompt.settings.model || "gpt-5";
+    const completionParams = {
+      model: modelToUse,
       messages: [
         { role: "system", content: prompt.systemPrompt },
         { role: "user", content: userPrompt }
       ],
       response_format: prompt.settings.responseFormat || { type: "json_object" },
-      temperature: prompt.settings.temperature || 0.7,
-    });
+    };
+
+    // Only add temperature if not using gpt-5 (which doesn't support it)
+    if (!modelToUse.includes('gpt-5')) {
+      completionParams.temperature = prompt.settings.temperature || 0.7;
+    }
+
+    const completion = await openai.chat.completions.create(completionParams);
 
     const content = JSON.parse(completion.choices[0].message.content);
     return { success: true, content };
@@ -76,7 +83,16 @@ async function generateEmailContent(userPrompt, lookAndFeel = {}) {
  */
 async function generateEmailHTMLFromText(contentText, lookAndFeel = {}, generatedImages = []) {
   try {
-    const { brandColor = '#6366f1', accentColor = '#ec4899', logoUrl = '', fontFamily = 'Arial, sans-serif' } = lookAndFeel;
+    // Extract brand styling with fallbacks
+    const {
+      primaryColor = lookAndFeel.brandColor || '#6366f1',
+      accentColor = '#ec4899',
+      backgroundColor = '#FFFFFF',
+      headingFont = lookAndFeel.fontFamily || 'Georgia, serif',
+      bodyFont = lookAndFeel.fontFamily || 'Arial, sans-serif',
+      brandVoice = 'Professional and engaging',
+      logoUrl = ''
+    } = lookAndFeel;
 
     // Build prompt with content and images
     let imagesInfo = '';
@@ -93,16 +109,21 @@ ${contentText}
 
 ${imagesInfo}
 
-Styling:
-- Brand Color: ${brandColor}
-- Accent Color: ${accentColor}
-- Font: ${fontFamily}
-- Logo URL: ${logoUrl || 'none'}
+Brand Style Guide:
+- Primary Color (hex): ${primaryColor}
+- Accent Color (hex): ${accentColor}
+- Background Color (hex): ${backgroundColor}
+- Heading Font: ${headingFont}
+- Body Font: ${bodyFont}
+- Brand Personality: ${brandVoice}
+${logoUrl ? `- Logo URL: ${logoUrl}` : ''}
+
+IMPORTANT: Use these EXACT brand colors in the HTML. These are part of the brand's identity.
 
 Create a responsive, mobile-first HTML email using Mapp Engage syntax for personalization (e.g., <%\${user['FirstName']}%>).`;
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-5",
       messages: [
         {
           role: "system",
@@ -110,7 +131,7 @@ Create a responsive, mobile-first HTML email using Mapp Engage syntax for person
         },
         { role: "user", content: htmlPrompt }
       ],
-      temperature: 0.5,
+      // No temperature for gpt-5 - uses default (1)
     });
 
     const rawHtml = completion.choices[0].message.content;
@@ -146,14 +167,16 @@ Footer: ${emailContent.footer}`;
  * @param {string} userPrompt - User's request
  * @param {object} lookAndFeel - Brand styling
  * @param {object} companySettings - Company profile from settings
+ * @param {function} onProgress - Optional callback for progress updates (message) => void
  * @returns {Promise<object>} Complete campaign or clarifying questions
  */
-async function generateEmailCampaign(userPrompt, lookAndFeel = {}, companySettings = null) {
+async function generateEmailCampaign(userPrompt, lookAndFeel = {}, companySettings = null, onProgress = null) {
   try {
     const { analyzeAndEnhancePrompt, generateContentFromBrief } = require('./creativeDirector');
 
     // STAGE 1: Creative Director Analysis
     console.log('🎨 Stage 1: Creative Director analyzing request...');
+    if (onProgress) onProgress('🎨 Stage 1/5: Creative Director analyzing your request...', 'progress');
     const directorResult = await analyzeAndEnhancePrompt(userPrompt, companySettings);
 
     if (!directorResult.success) {
@@ -161,6 +184,9 @@ async function generateEmailCampaign(userPrompt, lookAndFeel = {}, companySettin
     }
 
     const briefText = directorResult.briefText;
+
+    // Send brief result
+    if (onProgress) onProgress(briefText, 'stage1_complete', { brief: briefText });
 
     // Check if settings are required or clarification needed
     // (Creative Director can indicate this in the text)
@@ -173,8 +199,32 @@ async function generateEmailCampaign(userPrompt, lookAndFeel = {}, companySettin
       };
     }
 
-    // STAGE 2: Generate Content from Brief
-    console.log('✍️ Stage 2: Generating content from expert brief...');
+    // STAGE 2: Extract brand alignment from brief (FAST - do this first!)
+    console.log('🎨 Stage 2: Extracting brand colors and fonts from brief...');
+    if (onProgress) onProgress('🎨 Stage 2/5: Extracting brand colors and fonts from brief...', 'progress');
+    const extractedBrandData = extractBrandAlignment(briefText);
+
+    // Merge extracted brand data with provided lookAndFeel (extracted data takes precedence)
+    const enhancedLookAndFeel = {
+      ...lookAndFeel,
+      ...extractedBrandData
+    };
+
+    // Send brand data result
+    if (onProgress) onProgress('✅ Stage 2 complete: Brand colors extracted!', 'stage2_complete', { brandData: extractedBrandData });
+
+    // STAGE 3: Extract and generate images from brief (Images specified in brief!)
+    console.log('🖼️ Stage 3: Generating images from creative brief...');
+    if (onProgress) onProgress('🖼️ Stage 3/5: Generating brand-aligned images from brief...', 'progress');
+    const imagePrompts = extractImagePrompts(briefText);
+    const generatedImages = await generateImages(imagePrompts);
+
+    // Send images result
+    if (onProgress) onProgress('✅ Stage 3 complete: Images generated!', 'stage3_complete', { images: generatedImages });
+
+    // STAGE 4: Generate Content from Brief (Now with colors and images available!)
+    console.log('✍️ Stage 4: Generating content from expert brief...');
+    if (onProgress) onProgress('✍️ Stage 4/5: Generating content from expert brief...', 'progress');
     const contentResult = await generateContentFromBrief(briefText);
 
     if (!contentResult.success) {
@@ -183,14 +233,13 @@ async function generateEmailCampaign(userPrompt, lookAndFeel = {}, companySettin
 
     const contentText = contentResult.contentText;
 
-    // STAGE 3: Extract and generate images from brief
-    console.log('🖼️ Stage 3: Generating images from creative brief...');
-    const imagePrompts = extractImagePrompts(briefText);
-    const generatedImages = await generateImages(imagePrompts);
+    // Send content result
+    if (onProgress) onProgress('✅ Stage 4 complete: Content generated!', 'stage4_complete', { content: contentText });
 
-    // STAGE 4: Generate Mobile-First HTML
-    console.log('📱 Stage 4: Generating mobile-first HTML template...');
-    const htmlResult = await generateEmailHTMLFromText(contentText, lookAndFeel, generatedImages);
+    // STAGE 5: Generate Mobile-First HTML with brand-aligned styling
+    console.log('📱 Stage 5: Generating mobile-first HTML template with brand styling...');
+    if (onProgress) onProgress('📱 Stage 5/5: Generating mobile-first HTML with brand styling...', 'progress');
+    const htmlResult = await generateEmailHTMLFromText(contentText, enhancedLookAndFeel, generatedImages);
 
     if (!htmlResult.success) {
       return htmlResult;
@@ -213,6 +262,49 @@ async function generateEmailCampaign(userPrompt, lookAndFeel = {}, companySettin
     console.error('Email Generation Error:', error);
     return { success: false, error: error.message };
   }
+}
+
+/**
+ * Extract brand colors and fonts from Creative Director's brief
+ * @param {string} briefText - The Creative Director's campaign brief
+ * @returns {object} Extracted brand styling
+ */
+function extractBrandAlignment(briefText) {
+  const brandData = {};
+
+  // Extract hex color codes
+  const hexMatches = briefText.matchAll(/#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})/g);
+  const hexColors = Array.from(hexMatches).map(m => '#' + m[1].toUpperCase());
+
+  // Try to identify primary, accent, and background colors from context
+  const primaryMatch = briefText.match(/primary\s+color[:\s]+#?([0-9A-Fa-f]{6})/i);
+  const accentMatch = briefText.match(/accent\s+color[:\s]+#?([0-9A-Fa-f]{6})/i);
+  const backgroundMatch = briefText.match(/background\s+color[:\s]+#?([0-9A-Fa-f]{6})/i);
+
+  if (primaryMatch) brandData.primaryColor = '#' + primaryMatch[1].toUpperCase();
+  if (accentMatch) brandData.accentColor = '#' + accentMatch[1].toUpperCase();
+  if (backgroundMatch) brandData.backgroundColor = '#' + backgroundMatch[1].toUpperCase();
+
+  // Fallback to first found colors if specific ones not labeled
+  if (!brandData.primaryColor && hexColors.length > 0) brandData.primaryColor = hexColors[0];
+  if (!brandData.accentColor && hexColors.length > 1) brandData.accentColor = hexColors[1];
+  if (!brandData.backgroundColor && hexColors.length > 2) brandData.backgroundColor = hexColors[2];
+
+  // Extract fonts
+  const headingFontMatch = briefText.match(/heading[s]?\s+font[:\s]+([^,\n]+(?:,\s*[^\n]+)?)/i);
+  const bodyFontMatch = briefText.match(/body\s+font[:\s]+([^,\n]+(?:,\s*[^\n]+)?)/i);
+
+  if (headingFontMatch) brandData.headingFont = headingFontMatch[1].trim();
+  if (bodyFontMatch) brandData.bodyFont = bodyFontMatch[1].trim();
+
+  // Extract brand voice
+  const brandVoiceMatch = briefText.match(/brand\s+voice[:\s]+([^\n]+)/i) ||
+                          briefText.match(/tone[:\s]+([^\n]+)/i);
+  if (brandVoiceMatch) brandData.brandVoice = brandVoiceMatch[1].trim();
+
+  console.log('🎨 Extracted brand alignment:', brandData);
+
+  return brandData;
 }
 
 /**
@@ -280,14 +372,16 @@ function parseBasicContent(contentText) {
  * @param {string} originalBriefText - Original brief text from Creative Director
  * @param {object} userAnswers - User's answers to questions
  * @param {object} lookAndFeel - Brand styling
+ * @param {function} onProgress - Optional callback for progress updates
  * @returns {Promise<object>} Complete campaign
  */
-async function generateCampaignWithAnswers(originalBriefText, userAnswers, lookAndFeel = {}) {
+async function generateCampaignWithAnswers(originalBriefText, userAnswers, lookAndFeel = {}, onProgress = null) {
   try {
     const { refineBrief, generateContentFromBrief } = require('./creativeDirector');
 
     // Refine brief with user answers
     console.log('🔄 Refining brief with user feedback...');
+    if (onProgress) onProgress('🔄 Stage 1/5: Refining campaign with your answers...', 'progress');
     const refinedResult = await refineBrief(originalBriefText, userAnswers);
 
     if (!refinedResult.success) {
@@ -296,8 +390,35 @@ async function generateCampaignWithAnswers(originalBriefText, userAnswers, lookA
 
     const briefText = refinedResult.briefText;
 
-    // Generate content
+    // Send brief result
+    if (onProgress) onProgress('✅ Stage 1 complete: Campaign refined!', 'stage1_complete', { brief: briefText });
+
+    // Extract brand alignment from refined brief (FAST - do this first!)
+    console.log('🎨 Extracting brand colors and fonts from refined brief...');
+    if (onProgress) onProgress('🎨 Stage 2/5: Extracting brand colors and fonts...', 'progress');
+    const extractedBrandData = extractBrandAlignment(briefText);
+
+    // Merge extracted brand data with provided lookAndFeel
+    const enhancedLookAndFeel = {
+      ...lookAndFeel,
+      ...extractedBrandData
+    };
+
+    // Send brand data result
+    if (onProgress) onProgress('✅ Stage 2 complete: Brand colors extracted!', 'stage2_complete', { brandData: extractedBrandData });
+
+    // Generate images (from brief image prompts!)
+    console.log('🖼️ Generating images...');
+    if (onProgress) onProgress('🖼️ Stage 3/5: Generating brand-aligned images from brief...', 'progress');
+    const imagePrompts = extractImagePrompts(briefText);
+    const generatedImages = await generateImages(imagePrompts);
+
+    // Send images result
+    if (onProgress) onProgress('✅ Stage 3 complete: Images generated!', 'stage3_complete', { images: generatedImages });
+
+    // Generate content (Now with colors and images available!)
     console.log('✍️ Generating content from refined brief...');
+    if (onProgress) onProgress('✍️ Stage 4/5: Generating content from refined brief...', 'progress');
     const contentResult = await generateContentFromBrief(briefText);
 
     if (!contentResult.success) {
@@ -306,14 +427,13 @@ async function generateCampaignWithAnswers(originalBriefText, userAnswers, lookA
 
     const contentText = contentResult.contentText;
 
-    // Generate images
-    console.log('🖼️ Generating images...');
-    const imagePrompts = extractImagePrompts(briefText);
-    const generatedImages = await generateImages(imagePrompts);
+    // Send content result
+    if (onProgress) onProgress('✅ Stage 4 complete: Content generated!', 'stage4_complete', { content: contentText });
 
-    // Generate HTML
-    console.log('📱 Generating HTML...');
-    const htmlResult = await generateEmailHTMLFromText(contentText, lookAndFeel, generatedImages);
+    // Generate HTML with brand-aligned styling
+    console.log('📱 Generating HTML with brand styling...');
+    if (onProgress) onProgress('📱 Stage 5/5: Generating mobile-first HTML with brand styling...', 'progress');
+    const htmlResult = await generateEmailHTMLFromText(contentText, enhancedLookAndFeel, generatedImages);
 
     if (!htmlResult.success) {
       return htmlResult;

@@ -37,6 +37,43 @@ Review company settings to understand:
 
 **CRITICAL:** If company settings are empty or minimal, set `needsMoreInfo: true` and ask user to configure settings first.
 
+**HOW TO EXTRACT & USE BRAND DATA FROM MARKDOWN:**
+
+When you receive a BRAND PROFILE & STYLE GUIDE in markdown format, extract and apply these elements:
+
+**A. Brand Colors (Critical for HTML emails):**
+- Look for hex codes (e.g., `#000000`, `#FF0000`)
+- Identify: Primary color, accent colors, background colors
+- **Apply:** Specify these exact colors in your brief for HTML generation
+- Example: "Use brand colors: Primary #000000 (black) for text/CTA, Accent #DE1B70 (deep pink) for highlights"
+
+**B. Typography:**
+- Look for font families (e.g., `Georgia`, `Arial`, `sans-serif`)
+- Note heading vs body fonts
+- **Apply:** Recommend web-safe alternatives if custom fonts listed
+- Example: "Headings: Georgia (serif, sophisticated), Body: Arial (clean, readable)"
+
+**C. Tone of Voice:**
+- Extract adjectives describing brand personality (e.g., "sophisticated", "professional", "empowering")
+- Look for example phrases or content themes
+- **Apply:** Specify exact tone in content brief
+- Example: "Tone: Sophisticated yet accessible, professional but warm, empowering language"
+
+**D. Visual Style for Image Generation:**
+- Look for descriptions of photography style (e.g., "editorial", "lifestyle", "minimalist")
+- Note common imagery themes, color palettes in photos
+- Identify mood/atmosphere keywords
+- **Apply:** Inject these into DALL-E image prompts
+- Example: "Images should match Ann Taylor's clean, elegant aesthetic: minimalist backgrounds, sophisticated models, monochromatic palette with deep pinks/blacks"
+
+**E. Brand Voice Keywords:**
+- Extract 5-8 adjectives that define the brand
+- Look for repeated themes in content
+- **Apply:** Use these to guide headline and body copy style
+- Example: "Brand keywords: sophisticated, refined, versatile, professional, polished, modern, confident, quality"
+
+**IMPORTANT:** Your entire brief should be infused with brand alignment. Every recommendation (subject line, image prompt, CTA text, color choice) must reflect the extracted brand identity.
+
 ### 3. STRATEGIC PLANNING
 Develop a comprehensive content strategy:
 
@@ -67,8 +104,18 @@ Develop a comprehensive content strategy:
 ### 4. VISUAL STRATEGY
 Plan 1-3 high-impact images that enhance the message. Use ULTRA-DETAILED professional fashion photography techniques.
 
+**🎨 CRITICAL: INJECT BRAND VISUAL STYLE INTO EVERY IMAGE PROMPT**
+
+Before crafting image prompts, extract the brand's visual identity from the markdown:
+- What photography style does the brand use? (Editorial, lifestyle, product, street style)
+- What colors dominate their imagery?
+- What mood/atmosphere do their images convey?
+- What settings/environments are common?
+
+**THEN: Infuse every image prompt with these brand-specific elements.**
+
 **DALL-E 3 Prompt Formula - Follow This Structure:**
-`[Photography Style] + [Subject & Pose] + [Clothing/Product Details] + [Camera Specs] + [Lighting] + [Composition] + [Environment] + [Mood] + [Color Palette] + [Quality Markers]`
+`[Photography Style + BRAND OVERLAY] + [Subject & Pose] + [Clothing/Product Details] + [Camera Specs] + [Lighting] + [Composition] + [Environment] + [Mood + BRAND MOOD] + [Color Palette + BRAND COLORS] + [Quality Markers]`
 
 **For Each Image, Specify ALL of These:**
 
@@ -142,13 +189,16 @@ Creative Lighting:
 - Optional magazine: "Vogue editorial aesthetic", "Harper's Bazaar cover style"
 
 **Image Prompt Quality - Write 3-5 Detailed Sentences:**
-✅ **GOOD EXAMPLE:**
+✅ **GOOD EXAMPLE (Generic):**
 "Editorial fashion photography shot on Hasselblad X2D with 80mm f/1.9 lens. Model in flowing emerald green silk evening gown with dramatic train, standing in minimalist white studio. Soft diffused window light from camera left creating gentle shadows, subtle rim light for separation. Three-quarter length shot, model positioned off-center following rule of thirds. Confident, elegant pose with hand on hip. Shot at f/2.8 for shallow depth of field. Clean, sophisticated aesthetic with monochromatic color palette. 8K resolution, ultra-high detail, Vogue editorial style."
+
+✅ **EXCELLENT EXAMPLE (Brand-Infused - Ann Taylor):**
+"Editorial fashion photography in Ann Taylor's signature sophisticated style, shot on Hasselblad X2D with 80mm f/1.9 lens. Professional woman in tailored emerald green blazer and matching trousers, standing in clean minimalist studio with seamless white backdrop. Soft diffused studio lighting creating professional polish, subtle rim light for depth. Three-quarter length shot, confident power pose with subtle hand gesture. Shot at f/2.8 for refined focus. Monochromatic color palette featuring brand colors: deep blacks (#000000) and accent pinks (#DE1B70). Sophisticated, timeless elegance matching Ann Taylor's refined aesthetic. 8K resolution, ultra-high detail, Vogue editorial quality for modern professional woman."
 
 ❌ **BAD EXAMPLE:**
 "Beautiful woman in green dress, nice lighting, professional photo"
 
-**Prompt Length:** 60-120 words (3-5 sentences) is optimal
+**Prompt Length:** 60-120 words (3-5 sentences) is optimal. Brand-infused prompts may be slightly longer (up to 140 words) to incorporate all brand elements.
 
 ### 5. CONTENT BRIEF
 Create detailed content guidelines:
@@ -240,9 +290,19 @@ You can respond in **JSON or structured markdown** - use whichever is most natur
       "footer": "Footer requirements"
     },
     "brandAlignment": {
-      "colors": ["#primary", "#accent"],
-      "fonts": "Font recommendations",
-      "voice": "How to maintain brand voice"
+      "extractedColors": {
+        "primary": "#000000",
+        "accent": "#FF0000",
+        "background": "#FFFFFF"
+      },
+      "extractedFonts": {
+        "heading": "Georgia, serif",
+        "body": "Arial, sans-serif"
+      },
+      "brandVoice": "Sophisticated yet accessible, professional but warm",
+      "brandKeywords": ["sophisticated", "refined", "professional", "polished"],
+      "visualStyle": "Clean, elegant aesthetic with minimalist backgrounds",
+      "imageGuidelines": "Use monochromatic palette with brand accent colors, professional models, editorial photography style"
     }
   }
 }
