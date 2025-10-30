@@ -30,6 +30,11 @@ function App() {
   const [showHtmlEditor, setShowHtmlEditor] = useState(false);
   const [htmlEditorLayout, setHtmlEditorLayout] = useState('split'); // 'split' | 'full'
 
+  // Progressive results display
+  const [campaignBrief, setCampaignBrief] = useState('');
+  const [generatedContent, setGeneratedContent] = useState('');
+  const [brandColors, setBrandColors] = useState(null);
+
   const normalizeHtmlDocument = (raw) => {
     const input = typeof raw === 'string' ? raw : String(raw ?? '');
     const trimmedContent = input.trim();
@@ -227,7 +232,13 @@ function App() {
     setCurrentPrompt(inputValue);
 
     setIsGenerating(true);
-    setGenerationStage('🎨 Creative Director analyzing your request...');
+    setGenerationStage('🎨 Initializing...');
+
+    // Clear previous progressive results
+    setCampaignBrief('');
+    setGeneratedContent('');
+    setBrandColors(null);
+    setEmailImages([]);
 
     try {
       const response = await fetch('http://localhost:3000/api/generate-email', {
@@ -240,11 +251,57 @@ function App() {
           lookAndFeel: {
             brandColor: '#6366f1',
             accentColor: '#ec4899',
-          }
+          },
+          streamProgress: true  // Enable SSE progress streaming
         }),
       });
 
-      const data = await response.json();
+      // Handle SSE stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalResult = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const jsonData = JSON.parse(line.slice(6));
+
+            if (jsonData.type === 'progress') {
+              setGenerationStage(jsonData.message);
+            } else if (jsonData.type === 'stage1_complete') {
+              // Stage 1: Show campaign brief
+              setGenerationStage(jsonData.message);
+              setCampaignBrief(jsonData.data?.brief || '');
+            } else if (jsonData.type === 'stage2_complete') {
+              // Stage 2: Show brand colors (REORDERED)
+              setGenerationStage(jsonData.message);
+              setBrandColors(jsonData.data?.brandData || null);
+            } else if (jsonData.type === 'stage3_complete') {
+              // Stage 3: Show images (REORDERED)
+              setGenerationStage(jsonData.message);
+              setEmailImages(jsonData.data?.images || []);
+            } else if (jsonData.type === 'stage4_complete') {
+              // Stage 4: Show generated content (REORDERED)
+              setGenerationStage(jsonData.message);
+              setGeneratedContent(jsonData.data?.content || '');
+            } else if (jsonData.type === 'complete') {
+              finalResult = jsonData.result;
+            } else if (jsonData.type === 'error') {
+              throw new Error(jsonData.error);
+            }
+          }
+        }
+      }
+
+      const data = finalResult;
 
       // Handle requiresSettings
       if (data.requiresSettings) {
@@ -450,7 +507,13 @@ function App() {
     try {
       setShowClarificationDialog(false);
       setIsGenerating(true);
-      setGenerationStage('🔄 Refining campaign with your answers...');
+      setGenerationStage('🔄 Initializing...');
+
+      // Clear previous progressive results
+      setCampaignBrief('');
+      setGeneratedContent('');
+      setBrandColors(null);
+      setEmailImages([]);
 
       const response = await fetch('http://localhost:3000/api/generate-email-with-answers', {
         method: 'POST',
@@ -463,11 +526,57 @@ function App() {
           lookAndFeel: {
             brandColor: '#6366f1',
             accentColor: '#ec4899',
-          }
+          },
+          streamProgress: true  // Enable SSE progress streaming
         }),
       });
 
-      const data = await response.json();
+      // Handle SSE stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalResult = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const jsonData = JSON.parse(line.slice(6));
+
+            if (jsonData.type === 'progress') {
+              setGenerationStage(jsonData.message);
+            } else if (jsonData.type === 'stage1_complete') {
+              // Stage 1: Show campaign brief
+              setGenerationStage(jsonData.message);
+              setCampaignBrief(jsonData.data?.brief || '');
+            } else if (jsonData.type === 'stage2_complete') {
+              // Stage 2: Show brand colors (REORDERED)
+              setGenerationStage(jsonData.message);
+              setBrandColors(jsonData.data?.brandData || null);
+            } else if (jsonData.type === 'stage3_complete') {
+              // Stage 3: Show images (REORDERED)
+              setGenerationStage(jsonData.message);
+              setEmailImages(jsonData.data?.images || []);
+            } else if (jsonData.type === 'stage4_complete') {
+              // Stage 4: Show generated content (REORDERED)
+              setGenerationStage(jsonData.message);
+              setGeneratedContent(jsonData.data?.content || '');
+            } else if (jsonData.type === 'complete') {
+              finalResult = jsonData.result;
+            } else if (jsonData.type === 'error') {
+              throw new Error(jsonData.error);
+            }
+          }
+        }
+      }
+
+      const data = finalResult;
 
       if (data.success) {
         setGenerationStage('✅ Campaign complete!');
@@ -723,6 +832,81 @@ function App() {
                         <p className="text-sm text-gray-300">{generationStage}</p>
                       )}
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Progressive Results Display - REORDERED to match new pipeline */}
+              {/* Stage 1: Campaign Brief */}
+              {campaignBrief && (
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-purple-600 rounded-full flex items-center justify-center flex-shrink-0">
+                    📋
+                  </div>
+                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex-1">
+                    <h3 className="text-sm font-semibold text-blue-300 mb-2">📋 Stage 1: Campaign Strategy</h3>
+                    <pre className="text-xs text-gray-300 whitespace-pre-wrap font-mono max-h-60 overflow-y-auto">{campaignBrief}</pre>
+                  </div>
+                </div>
+              )}
+
+              {/* Stage 2: Brand Colors */}
+              {brandColors && (
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 bg-gradient-to-br from-pink-400 to-rose-600 rounded-full flex items-center justify-center flex-shrink-0">
+                    🎨
+                  </div>
+                  <div className="bg-pink-500/10 border border-pink-500/20 rounded-xl p-4 flex-1">
+                    <h3 className="text-sm font-semibold text-pink-300 mb-2">🎨 Stage 2: Brand Colors</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {brandColors.primaryColor && (
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded border border-white/20" style={{ backgroundColor: brandColors.primaryColor }}></div>
+                          <span className="text-xs text-gray-300">Primary: {brandColors.primaryColor}</span>
+                        </div>
+                      )}
+                      {brandColors.accentColor && (
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded border border-white/20" style={{ backgroundColor: brandColors.accentColor }}></div>
+                          <span className="text-xs text-gray-300">Accent: {brandColors.accentColor}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Stage 3: Generated Images */}
+              {emailImages.length > 0 && (
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 bg-gradient-to-br from-yellow-400 to-orange-600 rounded-full flex items-center justify-center flex-shrink-0">
+                    🖼️
+                  </div>
+                  <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 flex-1">
+                    <h3 className="text-sm font-semibold text-yellow-300 mb-3">🖼️ Stage 3: Generated Images (from brief)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {emailImages.map((img, idx) => (
+                        <div key={idx} className="bg-black/20 rounded-lg overflow-hidden border border-white/10">
+                          <img src={img.url} alt={img.prompt} className="w-full h-32 object-cover" />
+                          <div className="p-2">
+                            <p className="text-xs text-gray-400 line-clamp-2">{img.prompt}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Stage 4: Email Content */}
+              {generatedContent && (
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 bg-gradient-to-br from-green-400 to-emerald-600 rounded-full flex items-center justify-center flex-shrink-0">
+                    ✍️
+                  </div>
+                  <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 flex-1">
+                    <h3 className="text-sm font-semibold text-green-300 mb-2">✍️ Stage 4: Email Content (using colors & images)</h3>
+                    <pre className="text-xs text-gray-300 whitespace-pre-wrap font-mono max-h-60 overflow-y-auto">{generatedContent}</pre>
                   </div>
                 </div>
               )}
