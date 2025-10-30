@@ -87,19 +87,41 @@ function Settings() {
         if (data.success && data.settings) {
           setSettings(data.settings);
           setWebsiteUrl(data.settings.website_url || '');
-          if (data.settings.dressipi_domain || data.settings.dressipi_seed_item_id) {
-            setDressipiDomain(data.settings.dressipi_domain || '');
-            setDressipiTestItemId(data.settings.dressipi_seed_item_id || '');
+
+          const domainFromResponse = data.settings.dressipi_domain || data.dressipi?.domain;
+          const seedFromResponse = data.settings.dressipi_seed_item_id || data.dressipi?.seed_item_id;
+
+          const storedDomain = localStorage.getItem('dressipi_domain') || '';
+          const storedSeed = localStorage.getItem('dressipi_seed_item_id') || '';
+
+          const resolvedDomain = domainFromResponse || storedDomain;
+          const resolvedSeed = seedFromResponse || storedSeed;
+
+          if (resolvedDomain) {
+            setDressipiDomain(resolvedDomain);
+            localStorage.setItem('dressipi_domain', resolvedDomain);
           }
-          if (data.dressipi) {
-            setDressipiDomain(data.dressipi.domain || data.settings.dressipi_domain || '');
-            setDressipiTestItemId(data.dressipi.seed_item_id || data.settings.dressipi_seed_item_id || '');
+          if (resolvedSeed) {
+            setDressipiTestItemId(resolvedSeed);
+            localStorage.setItem('dressipi_seed_item_id', resolvedSeed);
           }
           addMessage('assistant', `Settings loaded for ${data.settings.website_url}. Review and edit your brand profile below.`);
         } else {
-          if (data.dressipi) {
-            setDressipiDomain(data.dressipi.domain || '');
-            setDressipiTestItemId(data.dressipi.seed_item_id || '');
+          const storedDomain = localStorage.getItem('dressipi_domain') || '';
+          const storedSeed = localStorage.getItem('dressipi_seed_item_id') || '';
+
+          if (data.dressipi && data.dressipi.domain) {
+            setDressipiDomain(data.dressipi.domain);
+            localStorage.setItem('dressipi_domain', data.dressipi.domain);
+          } else if (storedDomain) {
+            setDressipiDomain(storedDomain);
+          }
+
+          if (data.dressipi && data.dressipi.seed_item_id) {
+            setDressipiTestItemId(data.dressipi.seed_item_id);
+            localStorage.setItem('dressipi_seed_item_id', data.dressipi.seed_item_id);
+          } else if (storedSeed) {
+            setDressipiTestItemId(storedSeed);
           }
           addMessage('assistant', "Hi! Let's set up your brand profile. What's your company website URL?");
         }

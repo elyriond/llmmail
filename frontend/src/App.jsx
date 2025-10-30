@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import InteractiveEmailPreview from './components/InteractiveEmailPreview';
 import ClarificationDialog from './components/ClarificationDialog';
@@ -43,6 +43,7 @@ function App() {
   });
   const [dressipiData, setDressipiData] = useState(null);
   const [dressipiSectionHtml, setDressipiSectionHtml] = useState('');
+  const settingsLoadedRef = useRef(false);
 
   const getDressipiImage = (item) =>
     item?.thumbnail_image_url ||
@@ -169,6 +170,34 @@ function App() {
     );
   };
 
+const API_BASE = 'http://localhost:3000';
+
+const jsonHeaders = {
+  'Content-Type': 'application/json'
+};
+
+const apiFetch = (endpoint, options = {}) => fetch(`${API_BASE}${endpoint}`, options);
+
+const fetchFallbackResult = async (endpoint, payload) => {
+  const response = await apiFetch(endpoint, {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ ...payload, streamProgress: false })
+  });
+
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(text || `Server Error (${response.status})`);
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    console.error('Failed to parse fallback response:', error, text);
+    throw new Error(`Unexpected response format: ${text.slice(0, 200)}`);
+  }
+};
+
   const normalizeHtmlDocument = (raw) => {
     const input = typeof raw === 'string' ? raw : String(raw ?? '');
     const trimmedContent = input.trim();
@@ -278,7 +307,7 @@ function App() {
       throw new Error('No HTML content available to save.');
     }
 
-    const response = await fetch('http://localhost:3000/api/templates', {
+    const response = await apiFetch('/api/templates', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -344,11 +373,6 @@ function App() {
     }
   };
 
-  // Load templates on mount
-  useEffect(() => {
-    loadTemplates();
-  }, []);
-
   useEffect(() => {
     if (dressipiDomain) {
       localStorage.setItem('dressipi_domain', dressipiDomain);
@@ -364,34 +388,54 @@ function App() {
   }, [dressipiDomain, dressipiSeedItemId]);
 
   useEffect(() => {
+    if (settingsLoadedRef.current) return;
+
+    const storedDomain = typeof window !== 'undefined' ? localStorage.getItem('dressipi_domain') || '' : '';
+    const storedSeed = typeof window !== 'undefined' ? localStorage.getItem('dressipi_seed_item_id') || '' : '';
+
+    if (storedDomain) setDressipiDomain(storedDomain);
+    if (storedSeed) setDressipiSeedItemId(storedSeed);
+
     const loadSettings = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/settings');
+        const response = await apiFetch('/api/settings');
         const data = await response.json();
         if (data.success && data.settings) {
-          const domain = data.settings.dressipi_domain || data.dressipi?.domain || '';
-          const seed = data.settings.dressipi_seed_item_id || data.dressipi?.seed_item_id || '';
-          setDressipiDomain(domain || '');
-          setDressipiSeedItemId(seed || '');
-          if (domain) localStorage.setItem('dressipi_domain', domain);
-          if (seed) localStorage.setItem('dressipi_seed_item_id', seed);
+          const domainValue = data.settings.dressipi_domain || data.dressipi?.domain || storedDomain;
+          const seedValue = data.settings.dressipi_seed_item_id || data.dressipi?.seed_item_id || storedSeed;
+          if (domainValue) {
+            setDressipiDomain(domainValue);
+            localStorage.setItem('dressipi_domain', domainValue);
+          }
+          if (seedValue) {
+            setDressipiSeedItemId(seedValue);
+            localStorage.setItem('dressipi_seed_item_id', seedValue);
+          }
         } else if (data.dressipi) {
-          setDressipiDomain(data.dressipi.domain || '');
-          setDressipiSeedItemId(data.dressipi.seed_item_id || '');
-          if (data.dressipi.domain) localStorage.setItem('dressipi_domain', data.dressipi.domain);
-          if (data.dressipi.seed_item_id) localStorage.setItem('dressipi_seed_item_id', data.dressipi.seed_item_id);
+          const domainValue = data.dressipi.domain || storedDomain;
+          const seedValue = data.dressipi.seed_item_id || storedSeed;
+          if (domainValue) {
+            setDressipiDomain(domainValue);
+            localStorage.setItem('dressipi_domain', domainValue);
+          }
+          if (seedValue) {
+            setDressipiSeedItemId(seedValue);
+            localStorage.setItem('dressipi_seed_item_id', seedValue);
+          }
         }
       } catch (error) {
         console.error('Failed to load settings:', error);
+      } finally {
+        settingsLoadedRef.current = true;
       }
     };
 
     loadSettings();
   }, []);
 
-  const loadTemplates = async () => {
+  const loadTemplates = useCallback(async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/templates');
+      const response = await apiFetch('/api/templates');
       const data = await response.json();
       if (data.success) {
         setTemplates(data.templates);
@@ -399,7 +443,7 @@ function App() {
     } catch (error) {
       console.error('Failed to load templates:', error);
     }
-  };
+  }, []);
 
   const handleGenerate = async () => {
     if (!inputValue.trim()) return;
@@ -442,19 +486,64 @@ function App() {
         payload.dressipi = dressipiConfig;
       }
 
-      const response = await fetch('http://localhost:3000/api/generate-email', {
+      const response = await fetch(`${API_BASE}/api/generate-email`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: jsonHeaders,
         body: JSON.stringify(payload),
       });
+
+      if (!response.ok || !response.body) {
+        const errorText = await response.text();
+        throw new Error(errorText || `Server Error (${response.status})`);
+      }
 
       // Handle SSE stream
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       let finalResult = null;
+
+      const processSseLine = (line) => {
+        if (!line.startsWith('data: ')) {
+          return;
+        }
+        const payload = line.slice(6).trim();
+        if (!payload) return;
+        try {
+          const jsonData = JSON.parse(payload);
+
+          if (jsonData.type === 'progress') {
+            setGenerationStage(jsonData.message);
+          } else if (jsonData.type === 'stage1_complete') {
+            setGenerationStage(jsonData.message);
+            setCampaignBrief(jsonData.data?.brief || '');
+          } else if (jsonData.type === 'stage2_complete') {
+            setGenerationStage(jsonData.message);
+            setBrandColors(jsonData.data?.brandData || null);
+          } else if (jsonData.type === 'stage3_complete') {
+            setGenerationStage(jsonData.message);
+            setEmailImages(jsonData.data?.images || []);
+          } else if (jsonData.type === 'stage4_complete') {
+            setGenerationStage(jsonData.message);
+            setGeneratedContent(jsonData.data?.content || '');
+          } else if (jsonData.type === 'dressipi_fetch') {
+            setGenerationStage(jsonData.message);
+          } else if (jsonData.type === 'dressipi_complete') {
+            setGenerationStage(jsonData.message);
+            setDressipiData(jsonData.data?.dressipi || null);
+          } else if (jsonData.type === 'dressipi_error') {
+            setGenerationStage(jsonData.message);
+            setDressipiData({ error: jsonData.message });
+          } else if (jsonData.type === 'complete') {
+            finalResult = jsonData.result;
+          } else if (jsonData.type === 'error') {
+            throw new Error(jsonData.error);
+          }
+        } catch (parseError) {
+          console.error('Failed to parse SSE message:', parseError, line);
+          throw parseError;
+        }
+      };
 
       while (true) {
         const { done, value } = await reader.read();
@@ -465,48 +554,19 @@ function App() {
         buffer = lines.pop(); // Keep incomplete line in buffer
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const jsonData = JSON.parse(line.slice(6));
-
-            if (jsonData.type === 'progress') {
-              setGenerationStage(jsonData.message);
-            } else if (jsonData.type === 'stage1_complete') {
-              // Stage 1: Show campaign brief
-              setGenerationStage(jsonData.message);
-              setCampaignBrief(jsonData.data?.brief || '');
-            } else if (jsonData.type === 'stage2_complete') {
-              // Stage 2: Show brand colors (REORDERED)
-              setGenerationStage(jsonData.message);
-              setBrandColors(jsonData.data?.brandData || null);
-            } else if (jsonData.type === 'stage3_complete') {
-              // Stage 3: Show images (REORDERED)
-              setGenerationStage(jsonData.message);
-              setEmailImages(jsonData.data?.images || []);
-            } else if (jsonData.type === 'stage4_complete') {
-              // Stage 4: Show generated content (REORDERED)
-              setGenerationStage(jsonData.message);
-              setGeneratedContent(jsonData.data?.content || '');
-            } else if (jsonData.type === 'dressipi_fetch') {
-              setGenerationStage(jsonData.message);
-            } else if (jsonData.type === 'dressipi_complete') {
-              setGenerationStage(jsonData.message);
-              setDressipiData(jsonData.data?.dressipi || null);
-            } else if (jsonData.type === 'dressipi_error') {
-              setGenerationStage(jsonData.message);
-              setDressipiData({ error: jsonData.message });
-            } else if (jsonData.type === 'complete') {
-              finalResult = jsonData.result;
-            } else if (jsonData.type === 'error') {
-              throw new Error(jsonData.error);
-            }
-          }
+          if (!line) continue;
+          processSseLine(line);
         }
       }
 
-      const data = finalResult;
+      if (buffer.trim()) {
+        processSseLine(buffer);
+      }
+
+      let data = finalResult;
 
       if (!data) {
-        throw new Error('No response received from server');
+        data = await fetchFallbackResult('/api/generate-email', payload);
       }
 
       // Handle requiresSettings
@@ -597,7 +657,7 @@ function App() {
 
   const loadTemplate = async (templateId) => {
     try {
-      const response = await fetch(`http://localhost:3000/api/templates/${templateId}`);
+      const response = await apiFetch(`/api/templates/${templateId}`);
       const data = await response.json();
 
       if (data.success) {
@@ -630,7 +690,7 @@ function App() {
     setMessages(prev => [...prev, generatingMessage]);
 
     try {
-      const response = await fetch('http://localhost:3000/api/generate-image', {
+      const response = await apiFetch('/api/generate-image', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -683,7 +743,7 @@ function App() {
       const originalImage = emailImages.find(img => img.url === imageUrl);
       const imagePrompt = prompt || originalImage?.prompt || 'Professional email marketing image';
 
-      const response = await fetch('http://localhost:3000/api/generate-image', {
+      const response = await apiFetch('/api/generate-image', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -758,19 +818,64 @@ function App() {
         payload.dressipi = dressipiConfig;
       }
 
-      const response = await fetch('http://localhost:3000/api/generate-email-with-answers', {
+      const response = await fetch(`${API_BASE}/api/generate-email-with-answers`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: jsonHeaders,
         body: JSON.stringify(payload),
       });
+
+      if (!response.ok || !response.body) {
+        const errorText = await response.text();
+        throw new Error(errorText || `Server Error (${response.status})`);
+      }
 
       // Handle SSE stream
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       let finalResult = null;
+
+      const processSseLine = (line) => {
+        if (!line.startsWith('data: ')) {
+          return;
+        }
+        const payload = line.slice(6).trim();
+        if (!payload) return;
+        try {
+          const jsonData = JSON.parse(payload);
+
+          if (jsonData.type === 'progress') {
+            setGenerationStage(jsonData.message);
+          } else if (jsonData.type === 'stage1_complete') {
+            setGenerationStage(jsonData.message);
+            setCampaignBrief(jsonData.data?.brief || '');
+          } else if (jsonData.type === 'stage2_complete') {
+            setGenerationStage(jsonData.message);
+            setBrandColors(jsonData.data?.brandData || null);
+          } else if (jsonData.type === 'stage3_complete') {
+            setGenerationStage(jsonData.message);
+            setEmailImages(jsonData.data?.images || []);
+          } else if (jsonData.type === 'stage4_complete') {
+            setGenerationStage(jsonData.message);
+            setGeneratedContent(jsonData.data?.content || '');
+          } else if (jsonData.type === 'dressipi_fetch') {
+            setGenerationStage(jsonData.message);
+          } else if (jsonData.type === 'dressipi_complete') {
+            setGenerationStage(jsonData.message);
+            setDressipiData(jsonData.data?.dressipi || null);
+          } else if (jsonData.type === 'dressipi_error') {
+            setGenerationStage(jsonData.message);
+            setDressipiData({ error: jsonData.message });
+          } else if (jsonData.type === 'complete') {
+            finalResult = jsonData.result;
+          } else if (jsonData.type === 'error') {
+            throw new Error(jsonData.error);
+          }
+        } catch (parseError) {
+          console.error('Failed to parse SSE message:', parseError, line);
+          throw parseError;
+        }
+      };
 
       while (true) {
         const { done, value } = await reader.read();
@@ -781,48 +886,19 @@ function App() {
         buffer = lines.pop(); // Keep incomplete line in buffer
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const jsonData = JSON.parse(line.slice(6));
-
-            if (jsonData.type === 'progress') {
-              setGenerationStage(jsonData.message);
-            } else if (jsonData.type === 'stage1_complete') {
-              // Stage 1: Show campaign brief
-              setGenerationStage(jsonData.message);
-              setCampaignBrief(jsonData.data?.brief || '');
-            } else if (jsonData.type === 'stage2_complete') {
-              // Stage 2: Show brand colors (REORDERED)
-              setGenerationStage(jsonData.message);
-              setBrandColors(jsonData.data?.brandData || null);
-            } else if (jsonData.type === 'stage3_complete') {
-              // Stage 3: Show images (REORDERED)
-              setGenerationStage(jsonData.message);
-              setEmailImages(jsonData.data?.images || []);
-            } else if (jsonData.type === 'stage4_complete') {
-              // Stage 4: Show generated content (REORDERED)
-              setGenerationStage(jsonData.message);
-              setGeneratedContent(jsonData.data?.content || '');
-            } else if (jsonData.type === 'dressipi_fetch') {
-              setGenerationStage(jsonData.message);
-            } else if (jsonData.type === 'dressipi_complete') {
-              setGenerationStage(jsonData.message);
-              setDressipiData(jsonData.data?.dressipi || null);
-            } else if (jsonData.type === 'dressipi_error') {
-              setGenerationStage(jsonData.message);
-              setDressipiData({ error: jsonData.message });
-            } else if (jsonData.type === 'complete') {
-              finalResult = jsonData.result;
-            } else if (jsonData.type === 'error') {
-              throw new Error(jsonData.error);
-            }
-          }
+          if (!line) continue;
+          processSseLine(line);
         }
       }
 
-      const data = finalResult;
+      if (buffer.trim()) {
+        processSseLine(buffer);
+      }
+
+      let data = finalResult;
 
       if (!data) {
-        throw new Error('No response received from server');
+        data = await fetchFallbackResult('/api/generate-email-with-answers', payload);
       }
 
       if (data.success) {
