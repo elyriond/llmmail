@@ -429,7 +429,7 @@ const DressipiRelatedItems = ({
               type="text"
               value={domain}
               onChange={(e) => onDomainChange(e.target.value)}
-              placeholder="e.g. www.dressipi.anntaylor.com"
+              placeholder="e.g. dressipi.anntaylor.com"
               className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-purple-500 text-sm placeholder:text-gray-500"
             />
           </div>
