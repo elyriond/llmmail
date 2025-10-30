@@ -33,6 +33,141 @@ function App() {
   const [campaignBrief, setCampaignBrief] = useState('');
   const [generatedContent, setGeneratedContent] = useState('');
   const [brandColors, setBrandColors] = useState(null);
+  const [dressipiDomain, setDressipiDomain] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return localStorage.getItem('dressipi_domain') || '';
+  });
+  const [dressipiSeedItemId, setDressipiSeedItemId] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return localStorage.getItem('dressipi_seed_item_id') || '';
+  });
+  const [dressipiData, setDressipiData] = useState(null);
+  const [dressipiSectionHtml, setDressipiSectionHtml] = useState('');
+
+  const getDressipiImage = (item) =>
+    item?.thumbnail_image_url ||
+    item?.image_url ||
+    (Array.isArray(item?.feed_image_urls) ? item.feed_image_urls[0] : null) ||
+    '';
+
+  const getDressipiPrice = (item) => {
+    if (!item) return '';
+    if (typeof item.price === 'string') return item.price;
+    if (typeof item.price === 'number') return `$${item.price}`;
+    if (item.price && typeof item.price === 'object') {
+      return item.price.formatted || item.price.current || item.price.display || '';
+    }
+    return '';
+  };
+
+  const getDressipiName = (item) =>
+    item?.name || item?.title || item?.display_name || item?.garment_id || 'Recommended Item';
+
+  const getDressipiId = (item) =>
+    item?.garment_id || item?.product_code || item?.id || item?.item_id || null;
+
+  const getDressipiUrl = (item) => item?.url || item?.product_url || item?.productUrl || '#';
+
+  const renderDressipiPreview = () => {
+    if (!dressipiData) {
+      return null;
+    }
+
+    if (dressipiData.error) {
+      return (
+        <div className="text-xs text-rose-300">
+          {dressipiData.error}
+        </div>
+      );
+    }
+
+    const items = Array.isArray(dressipiData.garment_data)
+      ? dressipiData.garment_data.slice(0, 3)
+      : [];
+    const seed = dressipiData.seed_detail;
+
+    if (!seed && items.length === 0) {
+      return (
+        <div className="text-xs text-gray-400">
+          No similar items were returned for this seed.
+        </div>
+      );
+    }
+
+    return (
+      <div className="mt-3 space-y-3">
+        {seed && (
+          <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-lg p-3">
+            {getDressipiImage(seed) ? (
+              <img
+                src={getDressipiImage(seed)}
+                alt={getDressipiName(seed)}
+                className="w-16 h-16 object-cover rounded-md border border-white/10"
+              />
+            ) : (
+              <div className="w-16 h-16 rounded-md border border-dashed border-white/10 flex items-center justify-center text-xs text-gray-500">
+                No image
+              </div>
+            )}
+            <div className="flex-1">
+              <div className="text-xs uppercase tracking-wide text-purple-300">Featured Item</div>
+              <div className="text-sm font-semibold text-white line-clamp-2">{getDressipiName(seed)}</div>
+              {getDressipiId(seed) && (
+                <div className="text-[11px] text-gray-400 mt-1">SKU: {getDressipiId(seed)}</div>
+              )}
+              {getDressipiPrice(seed) && (
+                <div className="text-xs text-purple-300 font-medium mt-1">{getDressipiPrice(seed)}</div>
+              )}
+            </div>
+            <a
+              href={getDressipiUrl(seed)}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-purple-300 hover:text-purple-200"
+            >
+              View ↗
+            </a>
+          </div>
+        )}
+
+        {items.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Top Recommendations</p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {items.map((item, index) => {
+                const image = getDressipiImage(item);
+                const name = getDressipiName(item);
+                const price = getDressipiPrice(item);
+                const id = getDressipiId(item);
+                return (
+                  <div key={id || index} className="bg-white/5 border border-white/10 rounded-lg p-3 flex flex-col gap-2">
+                    {image ? (
+                      <img src={image} alt={name} className="w-full h-24 object-cover rounded-md" />
+                    ) : (
+                      <div className="w-full h-24 rounded-md border border-dashed border-white/10 flex items-center justify-center text-xs text-gray-500">
+                        No image
+                      </div>
+                    )}
+                    <div className="text-xs font-semibold text-white line-clamp-2">{name}</div>
+                    {id && <div className="text-[11px] text-gray-400">SKU: {id}</div>}
+                    {price && <div className="text-xs text-purple-300 font-medium">{price}</div>}
+                    <a
+                      href={getDressipiUrl(item)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-purple-300 hover:text-purple-200"
+                    >
+                      Shop Now ↗
+                    </a>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const normalizeHtmlDocument = (raw) => {
     const input = typeof raw === 'string' ? raw : String(raw ?? '');
@@ -110,6 +245,11 @@ function App() {
     setEmailContent(null);
     setCurrentPrompt('');
     setEmailImages([]);
+    setCampaignBrief('');
+    setGeneratedContent('');
+    setBrandColors(null);
+    setDressipiData(null);
+    setDressipiSectionHtml('');
     setShowMappHelper(false);
     setShowTemplates(false);
     setShowSaveModal(false);
@@ -209,6 +349,46 @@ function App() {
     loadTemplates();
   }, []);
 
+  useEffect(() => {
+    if (dressipiDomain) {
+      localStorage.setItem('dressipi_domain', dressipiDomain);
+    } else {
+      localStorage.removeItem('dressipi_domain');
+    }
+
+    if (dressipiSeedItemId) {
+      localStorage.setItem('dressipi_seed_item_id', dressipiSeedItemId);
+    } else {
+      localStorage.removeItem('dressipi_seed_item_id');
+    }
+  }, [dressipiDomain, dressipiSeedItemId]);
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const response = await fetch('http://localhost:3000/api/settings');
+        const data = await response.json();
+        if (data.success && data.settings) {
+          const domain = data.settings.dressipi_domain || data.dressipi?.domain || '';
+          const seed = data.settings.dressipi_seed_item_id || data.dressipi?.seed_item_id || '';
+          setDressipiDomain(domain || '');
+          setDressipiSeedItemId(seed || '');
+          if (domain) localStorage.setItem('dressipi_domain', domain);
+          if (seed) localStorage.setItem('dressipi_seed_item_id', seed);
+        } else if (data.dressipi) {
+          setDressipiDomain(data.dressipi.domain || '');
+          setDressipiSeedItemId(data.dressipi.seed_item_id || '');
+          if (data.dressipi.domain) localStorage.setItem('dressipi_domain', data.dressipi.domain);
+          if (data.dressipi.seed_item_id) localStorage.setItem('dressipi_seed_item_id', data.dressipi.seed_item_id);
+        }
+      } catch (error) {
+        console.error('Failed to load settings:', error);
+      }
+    };
+
+    loadSettings();
+  }, []);
+
   const loadTemplates = async () => {
     try {
       const response = await fetch('http://localhost:3000/api/templates');
@@ -239,19 +419,35 @@ function App() {
     setEmailImages([]);
 
     try {
+      const dressipiConfig = dressipiDomain && dressipiSeedItemId
+        ? {
+            domain: dressipiDomain,
+            seedItemId: dressipiSeedItemId,
+          }
+        : null;
+
+      setDressipiData(null);
+      setDressipiSectionHtml('');
+
+      const payload = {
+        prompt: inputValue,
+        lookAndFeel: {
+          brandColor: '#6366f1',
+          accentColor: '#ec4899',
+        },
+        streamProgress: true,
+      };
+
+      if (dressipiConfig) {
+        payload.dressipi = dressipiConfig;
+      }
+
       const response = await fetch('http://localhost:3000/api/generate-email', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          prompt: inputValue,
-          lookAndFeel: {
-            brandColor: '#6366f1',
-            accentColor: '#ec4899',
-          },
-          streamProgress: true  // Enable SSE progress streaming
-        }),
+        body: JSON.stringify(payload),
       });
 
       // Handle SSE stream
@@ -290,6 +486,14 @@ function App() {
               // Stage 4: Show generated content (REORDERED)
               setGenerationStage(jsonData.message);
               setGeneratedContent(jsonData.data?.content || '');
+            } else if (jsonData.type === 'dressipi_fetch') {
+              setGenerationStage(jsonData.message);
+            } else if (jsonData.type === 'dressipi_complete') {
+              setGenerationStage(jsonData.message);
+              setDressipiData(jsonData.data?.dressipi || null);
+            } else if (jsonData.type === 'dressipi_error') {
+              setGenerationStage(jsonData.message);
+              setDressipiData({ error: jsonData.message });
             } else if (jsonData.type === 'complete') {
               finalResult = jsonData.result;
             } else if (jsonData.type === 'error') {
@@ -301,10 +505,16 @@ function App() {
 
       const data = finalResult;
 
+      if (!data) {
+        throw new Error('No response received from server');
+      }
+
       // Handle requiresSettings
       if (data.requiresSettings) {
         setIsGenerating(false);
         setGenerationStage('');
+        setDressipiData(null);
+        setDressipiSectionHtml('');
         const settingsMessage = {
           role: 'assistant',
           content: data.message + '\n\n[Click Settings in the header to configure your profile]'
@@ -318,6 +528,8 @@ function App() {
       if (data.needsClarification) {
         setIsGenerating(false);
         setGenerationStage('');
+        setDressipiData(null);
+        setDressipiSectionHtml('');
         setClarifyingQuestions(data.questions);
         setPendingBrief(data.brief);
         setShowClarificationDialog(true);
@@ -328,11 +540,18 @@ function App() {
       if (data.success) {
         setGenerationStage('✅ Campaign complete!');
 
+        setDressipiData(data.dressipi || null);
+        setDressipiSectionHtml(data.dressipiSection || '');
+
         // Add AI response to chat
         const imageCount = data.images?.length || 0;
+        const recommendationCount = data.dressipi?.garment_data?.length || 0;
+        const dressipiMessage = recommendationCount > 0
+          ? ` and included ${recommendationCount} Dressipi recommendation${recommendationCount > 1 ? 's' : ''}`
+          : '';
         const aiMessage = {
           role: 'assistant',
-          content: `I've created your professional email campaign: "${data.content.subject}"${imageCount > 0 ? ` with ${imageCount} custom AI-generated image${imageCount > 1 ? 's' : ''}` : ''}`
+          content: `I've created your professional email campaign: "${data.content.subject}"${imageCount > 0 ? ` with ${imageCount} custom AI-generated image${imageCount > 1 ? 's' : ''}` : ''}${dressipiMessage}`
         };
         setMessages(prev => [...prev, aiMessage]);
 
@@ -341,6 +560,8 @@ function App() {
         setEmailContent(data.content);
         setEmailImages(data.images || []);
       } else {
+        setDressipiData(null);
+        setDressipiSectionHtml('');
         const errorMessage = {
           role: 'assistant',
           content: `Error: ${data.error}`
@@ -348,6 +569,8 @@ function App() {
         setMessages(prev => [...prev, errorMessage]);
       }
     } catch (error) {
+      setDressipiData(null);
+      setDressipiSectionHtml('');
       const errorMessage = {
         role: 'assistant',
         content: `Error: ${error.message}`
@@ -511,20 +734,36 @@ function App() {
       setBrandColors(null);
       setEmailImages([]);
 
+      const dressipiConfig = dressipiDomain && dressipiSeedItemId
+        ? {
+            domain: dressipiDomain,
+            seedItemId: dressipiSeedItemId,
+          }
+        : null;
+
+      setDressipiData(null);
+      setDressipiSectionHtml('');
+
+      const payload = {
+        brief: pendingBrief,
+        answers: answers,
+        lookAndFeel: {
+          brandColor: '#6366f1',
+          accentColor: '#ec4899',
+        },
+        streamProgress: true,
+      };
+
+      if (dressipiConfig) {
+        payload.dressipi = dressipiConfig;
+      }
+
       const response = await fetch('http://localhost:3000/api/generate-email-with-answers', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          brief: pendingBrief,
-          answers: answers,
-          lookAndFeel: {
-            brandColor: '#6366f1',
-            accentColor: '#ec4899',
-          },
-          streamProgress: true  // Enable SSE progress streaming
-        }),
+        body: JSON.stringify(payload),
       });
 
       // Handle SSE stream
@@ -563,6 +802,14 @@ function App() {
               // Stage 4: Show generated content (REORDERED)
               setGenerationStage(jsonData.message);
               setGeneratedContent(jsonData.data?.content || '');
+            } else if (jsonData.type === 'dressipi_fetch') {
+              setGenerationStage(jsonData.message);
+            } else if (jsonData.type === 'dressipi_complete') {
+              setGenerationStage(jsonData.message);
+              setDressipiData(jsonData.data?.dressipi || null);
+            } else if (jsonData.type === 'dressipi_error') {
+              setGenerationStage(jsonData.message);
+              setDressipiData({ error: jsonData.message });
             } else if (jsonData.type === 'complete') {
               finalResult = jsonData.result;
             } else if (jsonData.type === 'error') {
@@ -574,14 +821,25 @@ function App() {
 
       const data = finalResult;
 
+      if (!data) {
+        throw new Error('No response received from server');
+      }
+
       if (data.success) {
         setGenerationStage('✅ Campaign complete!');
 
+        setDressipiData(data.dressipi || null);
+        setDressipiSectionHtml(data.dressipiSection || '');
+
         // Add AI response to chat
         const imageCount = data.images?.length || 0;
+        const recommendationCount = data.dressipi?.garment_data?.length || 0;
+        const dressipiMessage = recommendationCount > 0
+          ? ` and included ${recommendationCount} Dressipi recommendation${recommendationCount > 1 ? 's' : ''}`
+          : '';
         const aiMessage = {
           role: 'assistant',
-          content: `I've refined your campaign based on your answers: "${data.content.subject}"${imageCount > 0 ? ` with ${imageCount} custom AI-generated image${imageCount > 1 ? 's' : ''}` : ''}`
+          content: `I've refined your campaign based on your answers: "${data.content.subject}"${imageCount > 0 ? ` with ${imageCount} custom AI-generated image${imageCount > 1 ? 's' : ''}` : ''}${dressipiMessage}`
         };
         setMessages(prev => [...prev, aiMessage]);
 
@@ -590,6 +848,8 @@ function App() {
         setEmailContent(data.content);
         setEmailImages(data.images || []);
       } else {
+        setDressipiData(null);
+        setDressipiSectionHtml('');
         const errorMessage = {
           role: 'assistant',
           content: `Error: ${data.error}`
@@ -597,6 +857,8 @@ function App() {
         setMessages(prev => [...prev, errorMessage]);
       }
     } catch (error) {
+      setDressipiData(null);
+      setDressipiSectionHtml('');
       const errorMessage = {
         role: 'assistant',
         content: `Error: ${error.message}`
@@ -918,17 +1180,64 @@ function App() {
                   placeholder="Describe the email campaign you want to create..."
                   className="w-full px-4 py-3 pr-12 bg-white/5 text-white border border-white/10 rounded-xl focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all resize-none h-24 placeholder:text-gray-500"
                   disabled={isGenerating}
-                />
-                <button
-                  onClick={handleGenerate}
-                  disabled={isGenerating || !inputValue.trim()}
-                  className="absolute bottom-3 right-3 w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg flex items-center justify-center transition-all shadow-lg shadow-purple-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <span className="text-lg">▲</span>
-                </button>
+            />
+            <button
+              onClick={handleGenerate}
+              disabled={isGenerating || !inputValue.trim()}
+              className="absolute bottom-3 right-3 w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg flex items-center justify-center transition-all shadow-lg shadow-purple-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className="text-lg">▲</span>
+            </button>
+          </div>
+          <div className="mt-4 bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-white">Dressipi Similar Items</p>
+                <p className="text-xs text-gray-400">
+                  {dressipiDomain
+                    ? dressipiSeedItemId
+                      ? `Domain: ${dressipiDomain}`
+                      : 'Seed item missing; configure below'
+                    : 'Domain not configured'}
+                </p>
               </div>
-              <div className="flex justify-between items-center mt-3">
-                <div className="flex flex-col gap-1">
+              <Link to="/settings#dressipi-similar-items" className="text-xs text-purple-300 hover:text-purple-200">
+                Configure ↗
+              </Link>
+            </div>
+            {dressipiDomain ? (
+              <div className="space-y-2">
+                <label className="block text-xs text-gray-400">Seed Item ID</label>
+                <input
+                  type="text"
+                  value={dressipiSeedItemId}
+                  onChange={(e) => setDressipiSeedItemId(e.target.value)}
+                  placeholder="Enter Dressipi item ID"
+                  className="w-full px-3 py-2 bg-black/40 text-white border border-white/10 rounded-lg focus:outline-none focus:border-purple-500 text-sm placeholder:text-gray-500"
+                />
+                {!dressipiSeedItemId && (
+                  <p className="text-xs text-rose-300">
+                    Provide a seed item ID to include Dressipi recommendations.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-rose-300">
+                Add your Dressipi domain in Settings to enable product recommendations.
+              </p>
+            )}
+            {renderDressipiPreview()}
+            {dressipiSectionHtml && (
+              <details className="text-xs text-gray-400">
+                <summary className="cursor-pointer text-purple-300">Show injected HTML snippet</summary>
+                <pre className="mt-2 whitespace-pre-wrap break-all bg-black/40 border border-white/10 rounded-lg p-3 text-[11px] text-gray-300">
+{dressipiSectionHtml}
+                </pre>
+              </details>
+            )}
+          </div>
+          <div className="flex justify-between items-center mt-3">
+            <div className="flex flex-col gap-1">
                   <button
                     onClick={() => {
                       const prompt = window.prompt('Enter image description:');

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 
 const normalizeDressipiDomain = (raw) => {
@@ -27,6 +27,53 @@ function Settings() {
   const [isLoadingDressipi, setIsLoadingDressipi] = useState(false);
   const [dressipiError, setDressipiError] = useState('');
   const [dressipiLastRequest, setDressipiLastRequest] = useState('');
+  const dressipiReadyRef = useRef(false);
+  const dressipiSaveTimeout = useRef(null);
+
+  const addMessage = useCallback((role, content) => {
+    setMessages(prev => [...prev, { role, content }]);
+  }, []);
+
+  const persistDressipiSettings = useCallback(async (domainToSave, seedToSave) => {
+    try {
+      const payload = {
+        dressipi: {
+          domain: domainToSave ? normalizeDressipiDomain(domainToSave) : null,
+          seed_item_id: seedToSave ? seedToSave.trim() : null
+        }
+      };
+
+      const response = await fetch('http://localhost:3000/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to save Dressipi settings');
+      }
+    } catch (error) {
+      console.error('Dressipi settings save error:', error);
+      addMessage('assistant', `⚠️ Warning: Failed to save Dressipi settings automatically (${error.message}).`);
+    }
+  }, [addMessage]);
+
+  useEffect(() => {
+    if (!dressipiReadyRef.current) return;
+
+    if (dressipiDomain) {
+      localStorage.setItem('dressipi_domain', normalizeDressipiDomain(dressipiDomain));
+    } else {
+      localStorage.removeItem('dressipi_domain');
+    }
+
+    if (dressipiTestItemId) {
+      localStorage.setItem('dressipi_seed_item_id', dressipiTestItemId.trim());
+    } else {
+      localStorage.removeItem('dressipi_seed_item_id');
+    }
+  }, [dressipiDomain, dressipiTestItemId]);
 
   useEffect(() => {
     if (!isInitialLoad.current) {
@@ -40,19 +87,54 @@ function Settings() {
         if (data.success && data.settings) {
           setSettings(data.settings);
           setWebsiteUrl(data.settings.website_url || '');
+          if (data.settings.dressipi_domain || data.settings.dressipi_seed_item_id) {
+            setDressipiDomain(data.settings.dressipi_domain || '');
+            setDressipiTestItemId(data.settings.dressipi_seed_item_id || '');
+          }
+          if (data.dressipi) {
+            setDressipiDomain(data.dressipi.domain || data.settings.dressipi_domain || '');
+            setDressipiTestItemId(data.dressipi.seed_item_id || data.settings.dressipi_seed_item_id || '');
+          }
           addMessage('assistant', `Settings loaded for ${data.settings.website_url}. Review and edit your brand profile below.`);
         } else {
+          if (data.dressipi) {
+            setDressipiDomain(data.dressipi.domain || '');
+            setDressipiTestItemId(data.dressipi.seed_item_id || '');
+          }
           addMessage('assistant', "Hi! Let's set up your brand profile. What's your company website URL?");
         }
+        dressipiReadyRef.current = true;
       } catch (error) {
         console.error('Failed to load settings:', error);
         addMessage('assistant', "Hi! Let's set up your brand profile. What's your company website URL?");
+        dressipiReadyRef.current = true;
       }
     };
 
     loadInitialSettings();
     isInitialLoad.current = false;
+  }, [addMessage]);
+
+  useEffect(() => {
+    return () => {
+      if (dressipiSaveTimeout.current) {
+        clearTimeout(dressipiSaveTimeout.current);
+      }
+    };
   }, []);
+
+  useEffect(() => {
+    if (!dressipiReadyRef.current) return;
+    if (!dressipiDomain.trim() || !dressipiTestItemId.trim()) return;
+
+    if (dressipiSaveTimeout.current) {
+      clearTimeout(dressipiSaveTimeout.current);
+    }
+
+    dressipiSaveTimeout.current = setTimeout(() => {
+      persistDressipiSettings(dressipiDomain, dressipiTestItemId);
+    }, 800);
+  }, [dressipiDomain, dressipiTestItemId, persistDressipiSettings]);
 
   useEffect(() => {
     if (location.hash === '#dressipi-similar-items') {
@@ -62,10 +144,6 @@ function Settings() {
       }
     }
   }, [location.hash, settings]);
-
-  const addMessage = (role, content) => {
-    setMessages(prev => [...prev, { role, content }]);
-  };
 
   const fetchDressipiRelated = async () => {
     const rawDomain = dressipiDomain.trim();
@@ -111,6 +189,7 @@ function Settings() {
       }
 
       setDressipiResults(data.data);
+      persistDressipiSettings(rawDomain, seedItem);
       setDressipiError('');
     } catch (error) {
       console.error('Dressipi fetch error:', error);
@@ -155,10 +234,18 @@ function Settings() {
 
   const saveSettings = async () => {
     try {
+      const payload = {
+        brandProfile: settings || {},
+        dressipi: {
+          domain: dressipiDomain ? normalizeDressipiDomain(dressipiDomain) : null,
+          seed_item_id: dressipiTestItemId ? dressipiTestItemId.trim() : null,
+        }
+      };
+
       const response = await fetch('http://localhost:3000/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings)
+        body: JSON.stringify(payload)
       });
       const data = await response.json();
       if (data.success) {

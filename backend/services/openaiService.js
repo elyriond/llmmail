@@ -1,5 +1,6 @@
 const OpenAI = require('openai');
 const { loadPrompt } = require('../utils/promptLoader');
+const { fetchRelatedItems } = require('./dressipiService');
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -170,9 +171,12 @@ Footer: ${emailContent.footer}`;
  * @param {function} onProgress - Optional callback for progress updates (message) => void
  * @returns {Promise<object>} Complete campaign or clarifying questions
  */
-async function generateEmailCampaign(userPrompt, lookAndFeel = {}, companySettings = null, onProgress = null) {
+async function generateEmailCampaign(userPrompt, lookAndFeel = {}, companySettings = null, onProgress = null, options = {}) {
   try {
     const { analyzeAndEnhancePrompt, generateContentFromBrief } = require('./creativeDirector');
+    const dressipiOptions = options?.dressipi || null;
+    let dressipiData = null;
+    let dressipiSectionHtml = null;
 
     // STAGE 1: Creative Director Analysis
     console.log('🎨 Stage 1: Creative Director analyzing request...');
@@ -236,6 +240,24 @@ async function generateEmailCampaign(userPrompt, lookAndFeel = {}, companySettin
     // Send content result
     if (onProgress) onProgress('✅ Stage 4 complete: Content generated!', 'stage4_complete', { content: contentText });
 
+    // Optional: Fetch Dressipi similar items before HTML generation
+    if (dressipiOptions && (dressipiOptions.domain || dressipiOptions.customerName) && dressipiOptions.seedItemId) {
+      try {
+        if (onProgress) onProgress('🛍️ Fetching similar items from Dressipi...', 'dressipi_fetch');
+        dressipiData = await fetchRelatedItems({
+          domain: dressipiOptions.domain,
+          customerName: dressipiOptions.customerName,
+          itemId: dressipiOptions.seedItemId,
+          queryOptions: dressipiOptions.queryOptions || {},
+        });
+        if (onProgress) onProgress('✅ Retrieved Dressipi similar items', 'dressipi_complete', { dressipi: dressipiData });
+      } catch (dressipiError) {
+        console.error('Dressipi fetch failed:', dressipiError);
+        dressipiData = { success: false, error: dressipiError.message };
+        if (onProgress) onProgress(`⚠️ Dressipi fetch failed: ${dressipiError.message}`, 'dressipi_error');
+      }
+    }
+
     // STAGE 5: Generate Mobile-First HTML with brand-aligned styling
     console.log('📱 Stage 5: Generating mobile-first HTML template with brand styling...');
     if (onProgress) onProgress('📱 Stage 5/5: Generating mobile-first HTML with brand styling...', 'progress');
@@ -243,6 +265,16 @@ async function generateEmailCampaign(userPrompt, lookAndFeel = {}, companySettin
 
     if (!htmlResult.success) {
       return htmlResult;
+    }
+
+    let finalHtml = htmlResult.html;
+    if (dressipiData && Array.isArray(dressipiData.garment_data) && dressipiData.garment_data.length > 0) {
+      dressipiSectionHtml = buildDressipiHtmlSection({
+        seedItem: dressipiData.seed_detail || null,
+        items: dressipiData.garment_data,
+        lookAndFeel: enhancedLookAndFeel,
+      });
+      finalHtml = injectDressipiSection(finalHtml, dressipiSectionHtml);
     }
 
     console.log('✅ Campaign generation complete!');
@@ -253,9 +285,11 @@ async function generateEmailCampaign(userPrompt, lookAndFeel = {}, companySettin
     return {
       success: true,
       content: content,
-      html: htmlResult.html,
+      html: finalHtml,
       images: generatedImages,
-      brief: briefText
+      brief: briefText,
+      dressipi: dressipiData,
+      dressipiSection: dressipiSectionHtml
     };
 
   } catch (error) {
@@ -367,6 +401,153 @@ function parseBasicContent(contentText) {
   };
 }
 
+function buildDressipiHtmlSection({ seedItem, items, lookAndFeel = {} }) {
+  const primaryColor = lookAndFeel.primaryColor || lookAndFeel.brandColor || '#6366f1';
+  const accentColor = lookAndFeel.accentColor || '#ec4899';
+  const backgroundColor = lookAndFeel.backgroundColor || '#0f172a';
+  const headerTextColor = '#ffffff';
+
+  const normalizeImage = (item) =>
+    item?.thumbnail_image_url ||
+    item?.image_url ||
+    (Array.isArray(item?.feed_image_urls) ? item.feed_image_urls[0] : null) ||
+    '';
+
+  const normalizePrice = (item) => {
+    if (!item) return '';
+    if (typeof item.price === 'string') return item.price;
+    if (typeof item.price === 'number') return `$${item.price}`;
+    if (item.price && typeof item.price === 'object') {
+      return item.price.formatted || item.price.current || item.price.display || '';
+    }
+    return '';
+  };
+
+  const normalizeUrl = (item) => item?.url || item?.product_url || item?.productUrl || '#';
+  const normalizeName = (item) => item?.name || item?.title || item?.display_name || item?.garment_id || 'Recommended Item';
+
+  const renderCard = (item, index, total) => {
+    if (!item) return '';
+    const imageUrl = normalizeImage(item);
+    const name = normalizeName(item);
+    const price = normalizePrice(item);
+    const link = normalizeUrl(item);
+    const width = Math.floor(100 / total);
+    const displayId = item?.garment_id || item?.product_code || item?.id || item?.item_id || null;
+
+    return `
+      <td align="center" valign="top" width="${width}%" style="padding:12px 6px;">
+        <table role="presentation" width="100%" style="border-collapse:collapse;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">
+          ${imageUrl
+            ? `<tr>
+                 <td align="center" style="padding:0;">
+                   <a href="${link}" target="_blank" style="display:block;">
+                     <img src="${imageUrl}" alt="${name}" width="100%" style="display:block;width:100%;height:auto;">
+                   </a>
+                 </td>
+               </tr>`
+            : ''}
+          <tr>
+            <td align="left" style="padding:16px;">
+              <div style="font-family:'Helvetica Neue', Arial, sans-serif;font-size:15px;font-weight:600;color:#0f172a;line-height:1.4;">
+                ${name}
+              </div>
+              ${displayId ? `<div style="margin-top:4px;font-family:'Helvetica Neue', Arial, sans-serif;font-size:12px;color:#64748b;">SKU: ${displayId}</div>` : ''}
+              ${price ? `<div style="margin-top:8px;font-family:'Helvetica Neue', Arial, sans-serif;font-size:15px;font-weight:600;color:${accentColor};">${price}</div>` : ''}
+              <div style="margin-top:12px;">
+                <a href="${link}" target="_blank" style="display:inline-block;padding:10px 16px;background:${primaryColor};color:#ffffff;text-decoration:none;font-family:'Helvetica Neue', Arial, sans-serif;font-size:13px;border-radius:9999px;">
+                  Shop Now
+                </a>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    `;
+  };
+
+  const selectedItems = Array.isArray(items) ? items.slice(0, 3) : [];
+  const cardsHtml = selectedItems.map((item, idx) => renderCard(item, idx, Math.max(selectedItems.length, 1))).join('');
+
+  const seedImage = normalizeImage(seedItem);
+  const seedName = normalizeName(seedItem);
+  const seedPrice = normalizePrice(seedItem);
+  const seedLink = normalizeUrl(seedItem);
+  const seedId = seedItem?.garment_id || seedItem?.product_code || seedItem?.id || null;
+
+  const seedHtml = seedItem
+    ? `
+      <table role="presentation" width="100%" style="border-collapse:collapse;margin-bottom:16px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;">
+        ${seedImage
+          ? `<tr>
+               <td style="padding:0;">
+                 <a href="${seedLink}" target="_blank" style="display:block;">
+                   <img src="${seedImage}" alt="${seedName}" width="100%" style="display:block;width:100%;height:auto;">
+                 </a>
+               </td>
+             </tr>`
+          : ''}
+        <tr>
+          <td style="padding:20px;">
+            <div style="font-family:'Helvetica Neue', Arial, sans-serif;font-size:14px;font-weight:600;color:${accentColor};letter-spacing:0.08em;text-transform:uppercase;">Featured Look</div>
+            <div style="font-family:'Helvetica Neue', Arial, sans-serif;font-size:22px;font-weight:700;color:#0f172a;line-height:1.4;margin-top:6px;">${seedName}</div>
+            ${seedId ? `<div style="margin-top:6px;font-family:'Helvetica Neue', Arial, sans-serif;font-size:12px;color:#64748b;">SKU: ${seedId}</div>` : ''}
+            ${seedPrice ? `<div style="margin-top:12px;font-family:'Helvetica Neue', Arial, sans-serif;font-size:18px;font-weight:600;color:${accentColor};">${seedPrice}</div>` : ''}
+            <div style="margin-top:16px;">
+              <a href="${seedLink}" target="_blank" style="display:inline-block;padding:12px 20px;background:${primaryColor};color:#ffffff;text-decoration:none;font-family:'Helvetica Neue', Arial, sans-serif;font-size:14px;border-radius:9999px;">
+                View Product
+              </a>
+            </div>
+          </td>
+        </tr>
+      </table>
+    `
+    : '';
+
+  return `
+    <!-- Dressipi Similar Items -->
+    <table role="presentation" width="100%" style="border-collapse:collapse;margin:0 auto 24px auto;background:${backgroundColor};">
+      <tr>
+        <td style="padding:24px 20px 32px 20px;">
+          <table role="presentation" width="100%" style="border-collapse:collapse;margin-bottom:12px;">
+            <tr>
+              <td align="left" style="font-family:'Helvetica Neue', Arial, sans-serif;font-size:18px;font-weight:700;color:${headerTextColor};">
+                Recommended for You
+              </td>
+              <td align="right" style="font-family:'Helvetica Neue', Arial, sans-serif;font-size:13px;color:${headerTextColor};">
+                Powered by Dressipi
+              </td>
+            </tr>
+          </table>
+          ${seedHtml}
+          ${cardsHtml
+            ? `<table role="presentation" width="100%" style="border-collapse:collapse;" cellspacing="0" cellpadding="0">
+                <tr>
+                  ${cardsHtml}
+                </tr>
+              </table>`
+            : ''}
+        </td>
+      </tr>
+    </table>
+  `;
+}
+
+function injectDressipiSection(html, sectionHtml) {
+  if (!sectionHtml) {
+    return html;
+  }
+
+  const lower = html.toLowerCase();
+  const bodyCloseIdx = lower.lastIndexOf('</body>');
+
+  if (bodyCloseIdx !== -1) {
+    return `${html.slice(0, bodyCloseIdx)}${sectionHtml}\n${html.slice(bodyCloseIdx)}`;
+  }
+
+  return `${html}\n${sectionHtml}`;
+}
+
 /**
  * Generate campaign after user answers clarifying questions
  * @param {string} originalBriefText - Original brief text from Creative Director
@@ -375,9 +556,12 @@ function parseBasicContent(contentText) {
  * @param {function} onProgress - Optional callback for progress updates
  * @returns {Promise<object>} Complete campaign
  */
-async function generateCampaignWithAnswers(originalBriefText, userAnswers, lookAndFeel = {}, onProgress = null) {
+async function generateCampaignWithAnswers(originalBriefText, userAnswers, lookAndFeel = {}, onProgress = null, options = {}) {
   try {
     const { refineBrief, generateContentFromBrief } = require('./creativeDirector');
+    const dressipiOptions = options?.dressipi || null;
+    let dressipiData = null;
+    let dressipiSectionHtml = null;
 
     // Refine brief with user answers
     console.log('🔄 Refining brief with user feedback...');
@@ -430,6 +614,23 @@ async function generateCampaignWithAnswers(originalBriefText, userAnswers, lookA
     // Send content result
     if (onProgress) onProgress('✅ Stage 4 complete: Content generated!', 'stage4_complete', { content: contentText });
 
+    if (dressipiOptions && (dressipiOptions.domain || dressipiOptions.customerName) && dressipiOptions.seedItemId) {
+      try {
+        if (onProgress) onProgress('🛍️ Fetching similar items from Dressipi...', 'dressipi_fetch');
+        dressipiData = await fetchRelatedItems({
+          domain: dressipiOptions.domain,
+          customerName: dressipiOptions.customerName,
+          itemId: dressipiOptions.seedItemId,
+          queryOptions: dressipiOptions.queryOptions || {},
+        });
+        if (onProgress) onProgress('✅ Retrieved Dressipi similar items', 'dressipi_complete', { dressipi: dressipiData });
+      } catch (dressipiError) {
+        console.error('Dressipi fetch failed:', dressipiError);
+        dressipiData = { success: false, error: dressipiError.message };
+        if (onProgress) onProgress(`⚠️ Dressipi fetch failed: ${dressipiError.message}`, 'dressipi_error');
+      }
+    }
+
     // Generate HTML with brand-aligned styling
     console.log('📱 Generating HTML with brand styling...');
     if (onProgress) onProgress('📱 Stage 5/5: Generating mobile-first HTML with brand styling...', 'progress');
@@ -439,15 +640,27 @@ async function generateCampaignWithAnswers(originalBriefText, userAnswers, lookA
       return htmlResult;
     }
 
+    let finalHtml = htmlResult.html;
+    if (dressipiData && Array.isArray(dressipiData.garment_data) && dressipiData.garment_data.length > 0) {
+      dressipiSectionHtml = buildDressipiHtmlSection({
+        seedItem: dressipiData.seed_detail || null,
+        items: dressipiData.garment_data,
+        lookAndFeel: enhancedLookAndFeel,
+      });
+      finalHtml = injectDressipiSection(finalHtml, dressipiSectionHtml);
+    }
+
     // Parse basic content fields for frontend display
     const content = parseBasicContent(contentText);
 
     return {
       success: true,
       content: content,
-      html: htmlResult.html,
+      html: finalHtml,
       images: generatedImages,
-      brief: briefText
+      brief: briefText,
+      dressipi: dressipiData,
+      dressipiSection: dressipiSectionHtml
     };
 
   } catch (error) {

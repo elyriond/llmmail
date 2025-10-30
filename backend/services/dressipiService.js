@@ -117,4 +117,5 @@ async function fetchRelatedItems({ customerName, domain, itemId, queryOptions = 
 module.exports = {
   fetchRelatedItems,
   fetchItemDetail,
+  normalizeDomain,
 };

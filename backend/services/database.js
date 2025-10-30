@@ -63,6 +63,15 @@ function initDatabase() {
     )
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS dressipi_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      domain TEXT,
+      seed_item_id TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   console.log('Database initialized successfully');
 }
 
@@ -210,6 +219,41 @@ const brandProfileService = {
   }
 };
 
+const dressipiSettingsService = {
+  get() {
+    const stmt = db.prepare('SELECT * FROM dressipi_settings WHERE id = 1');
+    return stmt.get();
+  },
+
+  upsert(data) {
+    const existing = this.get();
+    if (existing) {
+      const stmt = db.prepare(`
+        UPDATE dressipi_settings SET
+          domain = ?,
+          seed_item_id = ?,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = 1
+      `);
+      stmt.run(
+        data.domain,
+        data.seed_item_id
+      );
+    } else {
+      const stmt = db.prepare(`
+        INSERT INTO dressipi_settings (id, domain, seed_item_id)
+        VALUES (1, ?, ?)
+      `);
+      stmt.run(
+        data.domain,
+        data.seed_item_id
+      );
+    }
+
+    return this.get();
+  }
+};
+
 // Initialize database on module load
 initDatabase();
 
@@ -217,5 +261,6 @@ module.exports = {
   db,
   templateService,
   lookFeelService,
-  brandProfileService
+  brandProfileService,
+  dressipiSettingsService
 };

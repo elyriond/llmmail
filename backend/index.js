@@ -24,10 +24,46 @@ app.use('/api', dressipiRoutes);
 const imageRoutes = require('./routes/imageRoutes');
 app.use('/api', imageRoutes);
 
+function resolveDressipiOptions(requestDressipi = {}) {
+  const saved = dressipiSettingsService.get();
+
+  const domainFromRequest = requestDressipi && requestDressipi.domain
+    ? String(requestDressipi.domain).trim()
+    : null;
+  const customerFromRequest = requestDressipi && requestDressipi.customerName
+    ? String(requestDressipi.customerName).trim()
+    : null;
+  const seedFromRequestRaw = requestDressipi?.seedItemId ?? requestDressipi?.seed_item_id;
+  const seedFromRequest = seedFromRequestRaw ? String(seedFromRequestRaw).trim() : null;
+
+  if (seedFromRequest && (domainFromRequest || customerFromRequest)) {
+    return {
+      domain: domainFromRequest || undefined,
+      customerName: customerFromRequest || undefined,
+      seedItemId: seedFromRequest,
+      queryOptions: requestDressipi?.queryOptions || undefined,
+    };
+  }
+
+  const savedDomain = saved?.domain ? String(saved.domain).trim() : null;
+  const savedSeed = saved?.seed_item_id ? String(saved.seed_item_id).trim() : null;
+
+  if (savedSeed && (savedDomain || customerFromRequest)) {
+    return {
+      domain: savedDomain || undefined,
+      seedItemId: savedSeed,
+      queryOptions: requestDressipi?.queryOptions || undefined,
+    };
+  }
+
+  return null;
+}
+
 // Generate email campaign endpoint with SSE progress (WITH CREATIVE DIRECTOR)
 app.post('/api/generate-email', async (req, res) => {
   try {
-    const { prompt, lookAndFeel, streamProgress } = req.body;
+    const { prompt, lookAndFeel, streamProgress, dressipi: requestDressipi } = req.body;
+    const dressipiOptions = resolveDressipiOptions(requestDressipi);
 
     if (!prompt) {
       return res.status(400).json({
@@ -63,7 +99,7 @@ app.post('/api/generate-email', async (req, res) => {
       };
 
       try {
-        const result = await generateEmailCampaign(prompt, lookAndFeel, companySettings, onProgress);
+        const result = await generateEmailCampaign(prompt, lookAndFeel, companySettings, onProgress, { dressipi: dressipiOptions });
 
         // Send final result
         res.write(`data: ${JSON.stringify({ type: 'complete', result })}\n\n`);
@@ -74,7 +110,7 @@ app.post('/api/generate-email', async (req, res) => {
       }
     } else {
       // Standard JSON response (no progress streaming)
-      const result = await generateEmailCampaign(prompt, lookAndFeel, companySettings);
+      const result = await generateEmailCampaign(prompt, lookAndFeel, companySettings, null, { dressipi: dressipiOptions });
 
       // Handle requiresSettings response
       if (result.requiresSettings) {
@@ -105,7 +141,8 @@ app.post('/api/generate-email', async (req, res) => {
 // Generate email with user answers to clarifying questions
 app.post('/api/generate-email-with-answers', async (req, res) => {
   try {
-    const { brief, answers, lookAndFeel, streamProgress } = req.body;
+    const { brief, answers, lookAndFeel, streamProgress, dressipi: requestDressipi } = req.body;
+    const dressipiOptions = resolveDressipiOptions(requestDressipi);
 
     if (!brief || !answers) {
       return res.status(400).json({
@@ -129,7 +166,7 @@ app.post('/api/generate-email-with-answers', async (req, res) => {
       };
 
       try {
-        const result = await generateCampaignWithAnswers(brief, answers, lookAndFeel, onProgress);
+        const result = await generateCampaignWithAnswers(brief, answers, lookAndFeel, onProgress, { dressipi: dressipiOptions });
 
         // Send final result
         res.write(`data: ${JSON.stringify({ type: 'complete', result })}\n\n`);
@@ -140,7 +177,7 @@ app.post('/api/generate-email-with-answers', async (req, res) => {
       }
     } else {
       // Standard JSON response (no progress streaming)
-      const result = await generateCampaignWithAnswers(brief, answers, lookAndFeel);
+      const result = await generateCampaignWithAnswers(brief, answers, lookAndFeel, null, { dressipi: dressipiOptions });
 
       if (!result.success) {
         return res.status(500).json(result);
@@ -170,7 +207,7 @@ app.get('/api/test', (req, res) => {
 });
 
 // Template endpoints
-const { templateService, lookFeelService, brandProfileService } = require('./services/database');
+const { templateService, lookFeelService, brandProfileService, dressipiSettingsService } = require('./services/database');
 
 // Save template
 app.post('/api/templates', (req, res) => {
@@ -357,8 +394,9 @@ app.post('/api/look-feel', (req, res) => {
 app.get('/api/settings', (req, res) => {
   try {
     const profile = brandProfileService.get();
+    const dressipi = dressipiSettingsService.get();
 
-    if (!profile) {
+    if (!profile && !dressipi) {
       return res.json({
         success: true,
         settings: null,
@@ -366,9 +404,21 @@ app.get('/api/settings', (req, res) => {
       });
     }
 
+    const combinedSettings = profile
+      ? {
+          ...profile,
+          dressipi_domain: dressipi?.domain || null,
+          dressipi_seed_item_id: dressipi?.seed_item_id || null,
+        }
+      : {
+          dressipi_domain: dressipi?.domain || null,
+          dressipi_seed_item_id: dressipi?.seed_item_id || null,
+        };
+
     res.json({
       success: true,
-      settings: profile
+      settings: combinedSettings,
+      dressipi,
     });
   } catch (error) {
     console.error('Settings fetch error:', error);
@@ -447,15 +497,34 @@ app.post('/api/settings/scan', async (req, res) => {
 // Update settings (manual edits)
 app.put('/api/settings', (req, res) => {
   try {
-    const settings = req.body;
+    const { brandProfile, dressipi } = req.body;
+    const settings = brandProfile || req.body;
 
-    const profileToSave = {
-      website_url: settings.website_url,
-      full_scan_markdown: settings.full_scan_markdown,
-      last_scanned_at: settings.last_scanned_at,
-    };
+    if (settings && (settings.website_url !== undefined || settings.full_scan_markdown !== undefined || settings.last_scanned_at !== undefined)) {
+      const profileToSave = {
+        website_url: settings.website_url || null,
+        full_scan_markdown: settings.full_scan_markdown || null,
+        last_scanned_at: settings.last_scanned_at || null,
+      };
 
-    brandProfileService.upsert(profileToSave);
+      brandProfileService.upsert(profileToSave);
+    }
+
+    const dressipiPayload = dressipi || (
+      req.body.dressipi_domain !== undefined || req.body.dressipi_seed_item_id !== undefined
+        ? {
+            domain: req.body.dressipi_domain,
+            seed_item_id: req.body.dressipi_seed_item_id,
+          }
+        : null
+    );
+
+    if (dressipiPayload) {
+      dressipiSettingsService.upsert({
+        domain: dressipiPayload.domain ? String(dressipiPayload.domain).trim() || null : null,
+        seed_item_id: dressipiPayload.seed_item_id ? String(dressipiPayload.seed_item_id).trim() || null : null,
+      });
+    }
 
     res.json({
       success: true,
