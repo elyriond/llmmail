@@ -125,20 +125,18 @@ async function generateContentFromBrief(briefText) {
     // Load the enhanced email content generation prompt
     const prompt = loadPrompt('email_content_generation');
 
-    const contentPrompt = `Based on the following detailed campaign brief from the Creative Director, create the email content.
+    const contentPrompt = `Based on the following detailed campaign brief from the Creative Director, create the email's written content.
 
 CAMPAIGN BRIEF FROM CREATIVE DIRECTOR:
 ${briefText}
 
-IMPORTANT:
-- Follow ALL guidance in the campaign brief including tone, brand voice, personalization strategy, and content structure
-- Use the brand keywords and personality traits mentioned in the brief
-- Match the specified tone exactly (e.g., if "sophisticated yet accessible", write accordingly)
-- Implement the personalization strategy outlined in the brief
-- Follow the content structure recommended (hero-cta, story-based, product-showcase, etc.)
-- Use the suggested subject line approach and preheader strategy
+**CRITICAL INSTRUCTIONS:**
+1.  **TEXT ONLY:** Your task is to generate the **written text** for the email.
+2.  **IGNORE IMAGES:** DO NOT include any image placeholders, URLs, or markdown for images (e.g., \`[IMAGE]\`). The HTML developer will add the images separately. Your output must be text only.
+3.  **FOLLOW THE BRIEF:** Adhere strictly to the tone, brand voice, personalization, and structure outlined in the brief.
+4.  **STRUCTURED OUTPUT:** Generate the content with clear sections: \`Subject Line\`, \`Preheader\`, \`Headline\`, \`Body Copy\`, \`Call-to-Action\`, and \`Footer\`.
 
-Generate the email content with clear sections for: Subject Line, Preheader, Headline, Body Copy, Call-to-Action, and Footer.`;
+Generate the text content now.`;
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',

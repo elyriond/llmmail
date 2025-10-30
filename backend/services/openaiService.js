@@ -96,55 +96,58 @@ async function generateEmailHTMLFromText(contentText, lookAndFeel = {}, generate
       primaryColor = lookAndFeel.brandColor || '#6366f1',
       accentColor = '#ec4899',
       backgroundColor = '#FFFFFF',
-      headingFont = lookAndFeel.fontFamily || 'Georgia, serif',
-      bodyFont = lookAndFeel.fontFamily || 'Arial, sans-serif',
+      headingFont = lookAndFeel.headingFont || 'Georgia, serif',
+      bodyFont = lookAndFeel.bodyFont || 'Arial, sans-serif',
       brandVoice = 'Professional and engaging',
       logoUrl = ''
     } = lookAndFeel;
 
-    // Build prompt with content and images
+    // Build a more forceful and explicit prompt
     let imagesInfo = '';
     if (generatedImages.length > 0) {
-      imagesInfo = '\n\nUse the following images in the email:\n';
-      generatedImages.forEach((img, idx) => {
-        // Use a simple placeholder instead of the full data URI
-        imagesInfo += `Image ${idx + 1}: Use placeholder "[IMAGE_${idx + 1}]". Description: ${img.prompt}\n\n`;
-      });
+      imagesInfo = '\n\nUse the following generated image in the email:\n';
+      imagesInfo += `Hero Image: Use placeholder "[IMAGE_1]". Description: ${generatedImages[0].prompt}\n`;
     }
 
-    const htmlPrompt = `Create a mobile-first HTML email template based on this content:
+    const htmlPrompt = `You are an expert email developer. Create a mobile-first HTML email template based on the content below.
 
+**Content:**
 ${contentText}
 
 ${imagesInfo}
 
-Brand Style Guide:
-- Primary Color (hex): ${primaryColor}
-- Accent Color (hex): ${accentColor}
-- Background Color (hex): ${backgroundColor}
-- Heading Font: ${headingFont}
-- Body Font: ${bodyFont}
-- Brand Personality: ${brandVoice}
-${logoUrl ? `- Logo URL: ${logoUrl}` : ''}
+**CRITICAL STYLE REQUIREMENTS:**
+You MUST use the following styles directly in the HTML as inline CSS (e.g., \`<p style="font-family: ...; color: ...;">\`).
 
-IMPORTANT: Use these EXACT brand colors in the HTML. These are part of the brand's identity.
+- **Primary Color:** \`${primaryColor}\` (Use for buttons, links, and important highlights)
+- **Accent Color:** \`${accentColor}\` (Use for secondary highlights or borders)
+- **Background Color:** \`${backgroundColor}\` (Use for the main email body background)
+- **Heading Font:** \`${headingFont}\` (Apply this font family to all headings like \`<h1>\`, \`<h2>\`, etc. Use a default size of 24px if not specified.)
+- **Body Font:** \`${bodyFont}\` (Apply this font family to all paragraph text like \`<p>\`, \`<td>\`, etc. Use a default size of 16px if not specified.)
+- **Brand Personality:** ${brandVoice}
+${logoUrl ? `- **Logo URL:** ${logoUrl}` : ''}
 
-Create a responsive, mobile-first HTML email using Mapp Engage syntax for personalization (e.g., <%\${user['FirstName']}%>).`;
+**ABSOLUTE RULES:**
+1.  **INLINE CSS:** All styling (colors, fonts, sizes) MUST be applied using inline \`style="..."\` attributes on the HTML elements.
+2.  **EXACT VALUES:** Use the EXACT hex codes and font families provided. Do not substitute them.
+3.  **RESPONSIVE DESIGN:** The email must be responsive and look great on mobile devices.
+4.  **MAPP SYNTAX:** Use Mapp Engage syntax for personalization (e.g., \`<%\${user['FirstName']}%>\`).
+
+Generate the complete, compliant HTML now.`;
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-5",
+      model: "gpt-4o",
       messages: [
         {
           role: "system",
-          content: 'You are an expert Mapp Engage email template developer. Create responsive, mobile-first HTML email templates with proper Mapp syntax.'
+          content: 'You are an expert Mapp Engage email template developer. Your task is to create responsive, mobile-first HTML email templates using inline CSS and proper Mapp syntax, strictly following the user\'s style guide.'
         },
         { role: "user", content: htmlPrompt }
       ],
-      // No temperature for gpt-5 - uses default (1)
     });
 
     console.log('--- generateEmailHTMLFromText Prompts ---');
-    console.log('System Prompt:', 'You are an expert Mapp Engage email template developer. Create responsive, mobile-first HTML email templates with proper Mapp syntax.');
+    console.log('System Prompt:', 'You are an expert Mapp Engage email template developer. Your task is to create responsive, mobile-first HTML email templates using inline CSS and proper Mapp syntax, strictly following the user\'s style guide.');
     console.log('User Prompt (HTML):', htmlPrompt);
     console.log('-----------------------------------------');
 
@@ -344,15 +347,14 @@ function extractBrandAlignment(briefText) {
  */
 function extractImagePrompts(briefText) {
   const prompts = [];
-  const imageMatches = briefText.matchAll(/---IMAGE_PROMPT_START---([\s\S]*?)---IMAGE_PROMPT_END---/g);
+  // New regex to find the content under the specific markdown heading
+  const promptMatch = briefText.match(/###\s+Hero Image AI Prompt\s+([\s\S]*?)(?=\n###|$)/);
 
-  for (const match of imageMatches) {
-    if (match[1]) {
-      const cleanedPrompt = match[1].trim();
-      if (cleanedPrompt) {
-        prompts.push(cleanedPrompt);
-        console.log('✅ Extracted image prompt:', cleanedPrompt);
-      }
+  if (promptMatch && promptMatch[1]) {
+    const cleanedPrompt = promptMatch[1].trim();
+    if (cleanedPrompt) {
+      prompts.push(cleanedPrompt);
+      console.log('✅ Extracted image prompt from heading:', cleanedPrompt);
     }
   }
 
@@ -364,7 +366,7 @@ function extractImagePrompts(briefText) {
     console.log(`✅ Found ${prompts.length} specific image prompts in brief.`);
   }
 
-  return prompts.slice(0, 3); // Max 3 images
+  return prompts.slice(0, 1); // Max 1 image
 }
 
 /**

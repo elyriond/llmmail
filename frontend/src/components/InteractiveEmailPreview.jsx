@@ -6,6 +6,7 @@ function InteractiveEmailPreview({
   isGeneratingImage,
   isEditable = false,
   onHtmlChange,
+  generatedImages = [], // Add generatedImages prop
 }) {
   const previewRef = useRef(null);
 
@@ -35,6 +36,20 @@ function InteractiveEmailPreview({
     const images = container.querySelectorAll('img');
 
     images.forEach((img) => {
+      // Check for Mapp Engage or other template syntax
+      const originalSrc = img.getAttribute('src');
+      if (originalSrc && originalSrc.includes('<%')) {
+        // Store the original template syntax in a data attribute
+        img.dataset.originalSrc = originalSrc;
+
+        // Use the first generated image if available, otherwise fallback to placeholder
+        if (generatedImages.length > 0 && generatedImages[0].url) {
+          img.src = generatedImages[0].url;
+        } else {
+          img.src = 'https://via.placeholder.com/600x400.png?text=Dynamic+Image';
+        }
+      }
+
       const wrapper = document.createElement('div');
       wrapper.style.position = 'relative';
       wrapper.style.display = 'inline-block';

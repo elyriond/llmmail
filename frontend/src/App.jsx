@@ -18,7 +18,6 @@ function App() {
   const [showNewEmailModal, setShowNewEmailModal] = useState(false);
   const [previewResetKey, setPreviewResetKey] = useState(0);
   const [showMappHelper, setShowMappHelper] = useState(false);
-  const [generatedImages, setGeneratedImages] = useState([]);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [emailImages, setEmailImages] = useState([]); // Images included in the email
   const [showClarificationDialog, setShowClarificationDialog] = useState(false);
@@ -110,7 +109,6 @@ function App() {
     updateEmailHtml('');
     setEmailContent(null);
     setCurrentPrompt('');
-    setGeneratedImages([]);
     setEmailImages([]);
     setShowMappHelper(false);
     setShowTemplates(false);
@@ -427,8 +425,6 @@ function App() {
       const data = await response.json();
 
       if (data.success) {
-        setGeneratedImages(prev => [...prev, data]);
-
         const successMessage = {
           role: 'assistant',
           content: `Image generated successfully!`,
@@ -654,6 +650,7 @@ function App() {
               isGeneratingImage={isGeneratingImage}
               isEditable={isEditingPreview}
               onHtmlChange={updateEmailHtml}
+              generatedImages={emailImages}
             />
           </div>
         </div>
@@ -831,7 +828,7 @@ function App() {
                 </button>
               </div>
               <div className="flex justify-between items-center mt-3">
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-1">
                   <button
                     onClick={() => {
                       const prompt = window.prompt('Enter image description:');
@@ -842,6 +839,12 @@ function App() {
                   >
                     <span>🎨</span> Generate Image
                   </button>
+                  <Link
+                    to={{ pathname: '/settings', hash: '#dressipi-similar-items' }}
+                    className="text-xs text-gray-500 hover:text-purple-300 transition-colors inline-flex items-center gap-1"
+                  >
+                    ⚙️ Configure Similar Items API
+                  </Link>
                 </div>
                 <button
                   onClick={handleGenerate}

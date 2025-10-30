@@ -6,14 +6,27 @@ const path = require('path');
  * @param {string} promptName - Name of the prompt file (without .md extension)
  * @returns {object} Parsed prompt with systemPrompt and settings
  */
-function loadPrompt(promptName) {
+function loadPrompt(promptName, visited = new Set()) {
   const promptPath = path.join(__dirname, '../../prompts', `${promptName}.md`);
+
+  if (visited.has(promptPath)) {
+    throw new Error(`Circular dependency detected in prompt includes: ${[...visited, promptPath].join(' -> ')}`);
+  }
+  visited.add(promptPath);
 
   if (!fs.existsSync(promptPath)) {
     throw new Error(`Prompt file not found: ${promptPath}`);
   }
 
-  const content = fs.readFileSync(promptPath, 'utf-8');
+  let content = fs.readFileSync(promptPath, 'utf-8');
+
+  // Handle {{include ...}} directives
+  content = content.replace(/{{include\s+([\w.-]+)\s*}}/g, (match, fileName) => {
+    const includedPromptName = fileName.replace('.md', '');
+    const includedPrompt = loadPrompt(includedPromptName, new Set(visited));
+    // We only want to include the system prompt content of the included file
+    return includedPrompt.systemPrompt;
+  });
 
   // Extract system prompt (between ## System Prompt and next ##)
   const systemPromptMatch = content.match(/## System Prompt\s+([\s\S]*?)(?=\n##|$)/);

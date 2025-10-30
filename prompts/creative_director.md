@@ -49,9 +49,10 @@ When you receive a BRAND PROFILE & STYLE GUIDE in markdown format, extract and a
 
 **B. Typography:**
 - Look for font families (e.g., `Georgia`, `Arial`, `sans-serif`)
+- **Look for font sizes and weights** (e.g., "16px", "font-weight: bold", "2rem")
 - Note heading vs body fonts
 - **Apply:** Recommend web-safe alternatives if custom fonts listed
-- Example: "Headings: Georgia (serif, sophisticated), Body: Arial (clean, readable)"
+- Example: "Headings: Georgia (serif, sophisticated), 24px, bold. Body: Arial (clean, readable), 16px, normal weight."
 
 **C. Tone of Voice:**
 - Extract adjectives describing brand personality (e.g., "sophisticated", "professional", "empowering")
@@ -103,6 +104,8 @@ Develop a comprehensive content strategy:
 
 ### 4. VISUAL STRATEGY
 Plan 1-3 high-impact images that enhance the message. Use ULTRA-DETAILED professional fashion photography techniques.
+
+{{include fashion_photography_prompts.md}}
 
 **🎨 CRITICAL: INJECT BRAND VISUAL STYLE INTO EVERY IMAGE PROMPT**
 
@@ -260,17 +263,9 @@ If user input is too vague, ask 1-3 targeted questions:
   - [Specific point 3 to cover]
 - **CTA:** [Specific CTA text recommendation]
 
-### **Visual Strategy & Image Prompts**
-- **Image 1: Hero Image**
-  - **Prompt:** 
-    ---IMAGE_PROMPT_START---
-    [2-4 sentence detailed prompt with specific photography direction]
-    ---IMAGE_PROMPT_END---
-- **Image 2: Product Image**
-  - **Prompt:** 
-    ---IMAGE_PROMPT_START---
-    [2-4 sentence detailed prompt with specific photography direction]
-    ---IMAGE_PROMPT_END---
+### **Hero Image AI Prompt**
+[This is the most important part of your response. Place the single, detailed, 3-5 sentence hero image prompt here. The entire prompt must be under this exact heading.]
+
 
 ---
 
