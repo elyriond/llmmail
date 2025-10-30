@@ -1,8 +1,17 @@
 const Database = require('better-sqlite3');
 const path = require('path');
+const fs = require('fs');
 
 // Initialize database
-const dbPath = path.join(__dirname, '../data/llmmail.db');
+const dataDirectory = process.env.DB_DIRECTORY
+  ? path.resolve(process.env.DB_DIRECTORY)
+  : path.join(__dirname, '../data');
+fs.mkdirSync(dataDirectory, { recursive: true }); // ensure sqlite folder exists
+
+const dbPath = path.join(
+  dataDirectory,
+  process.env.DB_FILENAME || 'llmmail.db'
+);
 const db = new Database(dbPath);
 
 // Enable foreign keys
