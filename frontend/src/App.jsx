@@ -6,7 +6,7 @@ import ClarificationDialog from './components/ClarificationDialog';
 function App() {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
-  const [emailHtml, setEmailHtml] = useState('');
+  const [emailHtml, setEmailHtmlState] = useState('');
   const [emailContent, setEmailContent] = useState(null);
   const [currentPrompt, setCurrentPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -15,7 +15,6 @@ function App() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [templateDescription, setTemplateDescription] = useState('');
-  const [viewMode, setViewMode] = useState('preview'); // 'preview' or 'code'
   const [showMappHelper, setShowMappHelper] = useState(false);
   const [generatedImages, setGeneratedImages] = useState([]);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
@@ -26,6 +25,77 @@ function App() {
   const [generationStage, setGenerationStage] = useState(''); // Progress indicator
   const [previewMode, setPreviewMode] = useState('desktop');
   const [isEditingPreview, setIsEditingPreview] = useState(false);
+  const [showHtmlEditor, setShowHtmlEditor] = useState(false);
+  const [htmlEditorLayout, setHtmlEditorLayout] = useState('split'); // 'split' | 'full'
+
+  const normalizeHtmlDocument = (raw) => {
+    const input = typeof raw === 'string' ? raw : String(raw ?? '');
+    const trimmedContent = input.trim();
+
+    if (!trimmedContent) {
+      return '<!DOCTYPE html>\n<html>\n\n</html>';
+    }
+
+    let next = input.replace(/^\s+/, '');
+    if (!next.toLowerCase().startsWith('<!doctype html')) {
+      next = `<!DOCTYPE html>\n${next}`;
+    }
+
+    next = next.replace(/\s+$/, '');
+    if (!next.toLowerCase().endsWith('</html>')) {
+      next = `${next}\n</html>`;
+    }
+
+    return next;
+  };
+
+  const updateEmailHtml = (value) => {
+    if (typeof value === 'function') {
+      setEmailHtmlState((prev) => {
+        const result = value(prev);
+        if (!result || !String(result).trim()) {
+          return '';
+        }
+        return normalizeHtmlDocument(result);
+      });
+      return;
+    }
+
+    if (!value || !String(value).trim()) {
+      setEmailHtmlState('');
+      return;
+    }
+
+    setEmailHtmlState(normalizeHtmlDocument(value));
+  };
+
+  const extractPreviewContent = (raw) => {
+    if (!raw) return '';
+
+    const withoutDoctype = raw.replace(/<!DOCTYPE[^>]*>/i, '').trim();
+    const bodyMatch = withoutDoctype.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+
+    if (bodyMatch) {
+      return bodyMatch[1].trim();
+    }
+
+    return withoutDoctype.replace(/<\/?html[^>]*>/gi, '').trim();
+  };
+
+  const htmlEditorValue =
+    emailHtml && emailHtml.trim()
+      ? emailHtml
+      : normalizeHtmlDocument(emailHtml ?? '');
+
+  const previewHtmlValue = isEditingPreview
+    ? extractPreviewContent(emailHtml)
+    : emailHtml;
+
+  const previewHtmlForComponent = isEditingPreview
+    ? previewHtmlValue ?? ''
+    : previewHtmlValue && previewHtmlValue.trim()
+      ? previewHtmlValue
+      : null;
 
   // Load templates on mount
   useEffect(() => {
@@ -108,7 +178,7 @@ function App() {
         setMessages(prev => [...prev, aiMessage]);
 
         // Update email preview and content
-        setEmailHtml(data.html);
+        updateEmailHtml(data.html);
         setEmailContent(data.content);
         setEmailImages(data.images || []);
       } else {
@@ -179,7 +249,7 @@ function App() {
       const data = await response.json();
 
       if (data.success) {
-        setEmailHtml(data.template.html_content);
+        updateEmailHtml(data.template.html_content);
         setEmailContent({
           subject: data.template.subject,
           preheader: data.template.preheader
@@ -280,7 +350,7 @@ function App() {
       if (data.success) {
         // Replace the image in the HTML
         const newHtml = emailHtml.replace(imageUrl, data.imageUrl);
-        setEmailHtml(newHtml);
+        updateEmailHtml(newHtml);
 
         // Update emailImages array
         setEmailImages(prev => prev.map(img =>
@@ -337,7 +407,7 @@ function App() {
         setMessages(prev => [...prev, aiMessage]);
 
         // Update email preview and content
-        setEmailHtml(data.html);
+        updateEmailHtml(data.html);
         setEmailContent(data.content);
         setEmailImages(data.images || []);
       } else {
@@ -367,6 +437,66 @@ function App() {
       handleGenerate();
     }
   };
+
+  const previewPane = (
+    <div
+      className={`transition-all duration-300 ${
+        previewMode === 'mobile' ? 'flex justify-center py-6' : 'mx-auto'
+      }`}
+    >
+      <div
+        className={`transition-all duration-300 ${
+          previewMode === 'mobile' ? 'w-[380px] max-w-full' : 'max-w-2xl w-full'
+        }`}
+      >
+        <div
+          className={`transition-all duration-300 ${
+            previewMode === 'mobile'
+              ? 'bg-slate-900 rounded-[32px] p-4 shadow-2xl border border-slate-800 min-h-full flex items-center justify-center'
+              : 'bg-white rounded-lg shadow-2xl border border-white/10 min-h-full'
+          }`}
+        >
+          <div
+            className={`overflow-hidden ${
+              previewMode === 'mobile' ? 'rounded-[22px] bg-white' : 'rounded-lg bg-white'
+            }`}
+          >
+            <InteractiveEmailPreview
+              html={previewHtmlForComponent}
+              onRegenerateImage={handleRegenerateImage}
+              isGeneratingImage={isGeneratingImage}
+              isEditable={isEditingPreview}
+              onHtmlChange={updateEmailHtml}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const htmlEditorPane = (
+    <div className="bg-slate-900 rounded-lg border border-white/10 overflow-hidden flex flex-col h-full">
+      <div className="px-4 py-2 bg-black/40 border-b border-white/10 flex items-center justify-between">
+        <span className="text-xs text-gray-400 font-mono">HTML + Mapp Template</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigator.clipboard.writeText(emailHtml ?? '')}
+            disabled={!emailHtml}
+            className="text-xs px-2 py-1 bg-white/5 hover:bg-white/10 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            📋 Copy
+          </button>
+        </div>
+      </div>
+      <textarea
+        value={htmlEditorValue}
+        onChange={(e) => updateEmailHtml(e.target.value)}
+        placeholder="Dein HTML erscheint hier. Du kannst es direkt bearbeiten oder neues HTML einfügen."
+        className="flex-1 w-full bg-black/50 text-gray-100 font-mono text-xs leading-5 p-4 border-none outline-none resize-none"
+        spellCheck={false}
+      />
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white font-sans">
@@ -560,14 +690,98 @@ function App() {
             </div>
           </div>
 
-          {/* Right Side: Preview */}
+          {/* Right Side: Preview & Code */}
           <div className="flex flex-col bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 overflow-hidden">
-            <div className="px-6 py-4 border-b border-white/10 bg-black/20 flex items-center justify-between">
-              <h2 className="font-semibold text-lg flex items-center gap-2">
-                <span className="text-purple-400">{viewMode === 'preview' ? '👁' : '💻'}</span>
-                {viewMode === 'preview' ? 'Interactive Preview' : 'Mapp Template Code'}
-              </h2>
+            <div className="px-6 py-4 border-b border-white/10 bg-black/20 flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-2">
+                <span className="text-purple-400 text-xl">✨</span>
+                <h2 className="font-semibold text-lg">
+                  Layout Preview &amp; HTML
+                </h2>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setPreviewMode('desktop')}
+                  aria-pressed={previewMode === 'desktop'}
+                  className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
+                    previewMode === 'desktop'
+                      ? 'bg-gradient-to-r from-purple-500 to-pink-500 border-transparent shadow-lg shadow-purple-500/30'
+                      : 'bg-white/5 hover:bg-white/10 border-white/10'
+                  }`}
+                >
+                  💻 Desktop
+                </button>
+                <button
+                  onClick={() => setPreviewMode('mobile')}
+                  aria-pressed={previewMode === 'mobile'}
+                  className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
+                    previewMode === 'mobile'
+                      ? 'bg-gradient-to-r from-purple-500 to-pink-500 border-transparent shadow-lg shadow-purple-500/30'
+                      : 'bg-white/5 hover:bg-white/10 border-white/10'
+                  }`}
+                >
+                  📱 Mobile
+                </button>
+                <button
+                  onClick={() => setIsEditingPreview((prev) => !prev)}
+                  disabled={(!emailHtml && !isEditingPreview) || (showHtmlEditor && htmlEditorLayout === 'full')}
+                  aria-pressed={isEditingPreview}
+                  className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
+                    isEditingPreview
+                      ? 'bg-gradient-to-r from-emerald-500 to-teal-500 border-transparent shadow-lg shadow-emerald-500/30'
+                      : 'bg-white/5 hover:bg-white/10 border-white/10 disabled:opacity-50 disabled:cursor-not-allowed'
+                  }`}
+                >
+                  {isEditingPreview ? '✅ Done' : '✏️ Edit Preview'}
+                </button>
+                <button
+                  onClick={() =>
+                    setShowHtmlEditor((prev) => {
+                      const next = !prev;
+                      if (!next) {
+                        setHtmlEditorLayout('split');
+                      }
+                      return next;
+                    })
+                  }
+                  aria-pressed={showHtmlEditor}
+                  className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
+                    showHtmlEditor
+                      ? 'bg-gradient-to-r from-blue-500 to-purple-500 border-transparent shadow-lg shadow-blue-500/20'
+                      : 'bg-white/5 hover:bg-white/10 border-white/10'
+                  }`}
+                >
+                  {showHtmlEditor ? '🧾 Hide HTML' : '🧾 HTML Editor'}
+                </button>
+                {showHtmlEditor && (
+                  <div className="flex border border-white/10 rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setHtmlEditorLayout('split')}
+                      aria-pressed={htmlEditorLayout === 'split'}
+                      className={`text-xs px-3 py-1 transition-colors ${
+                        htmlEditorLayout === 'split'
+                          ? 'bg-white/10'
+                          : 'bg-white/5 hover:bg-white/10'
+                      }`}
+                    >
+                      ⫽ Split
+                    </button>
+                    <button
+                      onClick={() => {
+                        setHtmlEditorLayout('full');
+                        setIsEditingPreview(false);
+                      }}
+                      aria-pressed={htmlEditorLayout === 'full'}
+                      className={`text-xs px-3 py-1 border-l border-white/10 transition-colors ${
+                        htmlEditorLayout === 'full'
+                          ? 'bg-white/10'
+                          : 'bg-white/5 hover:bg-white/10'
+                      }`}
+                    >
+                      ⛶ Full Screen
+                    </button>
+                  </div>
+                )}
                 {emailHtml && (
                   <>
                     <button
@@ -588,129 +802,21 @@ function App() {
                     </button>
                   </>
                 )}
-                {viewMode === 'preview' && (
-                  <>
-                    <button
-                      onClick={() => setPreviewMode('desktop')}
-                      aria-pressed={previewMode === 'desktop'}
-                      className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
-                        previewMode === 'desktop'
-                          ? 'bg-gradient-to-r from-purple-500 to-pink-500 border-transparent shadow-lg shadow-purple-500/30'
-                          : 'bg-white/5 hover:bg-white/10 border-white/10'
-                      }`}
-                    >
-                      💻 Desktop
-                    </button>
-                    <button
-                      onClick={() => setPreviewMode('mobile')}
-                      aria-pressed={previewMode === 'mobile'}
-                      className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
-                        previewMode === 'mobile'
-                          ? 'bg-gradient-to-r from-purple-500 to-pink-500 border-transparent shadow-lg shadow-purple-500/30'
-                          : 'bg-white/5 hover:bg-white/10 border-white/10'
-                      }`}
-                    >
-                      📱 Mobile
-                    </button>
-                    <button
-                      onClick={() => setIsEditingPreview((prev) => !prev)}
-                      disabled={!emailHtml && !isEditingPreview}
-                      aria-pressed={isEditingPreview}
-                      className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
-                        isEditingPreview
-                          ? 'bg-gradient-to-r from-emerald-500 to-teal-500 border-transparent shadow-lg shadow-emerald-500/30'
-                          : 'bg-white/5 hover:bg-white/10 border-white/10 disabled:opacity-50 disabled:cursor-not-allowed'
-                      }`}
-                    >
-                      {isEditingPreview ? '✅ Done' : '✏️ Edit'}
-                    </button>
-                  </>
-                )}
-                <div className="flex border border-white/10 rounded-lg overflow-hidden">
-                  <button
-                    onClick={() => setViewMode('preview')}
-                    className={`text-xs px-3 py-1 transition-colors ${
-                      viewMode === 'preview' ? 'bg-white/10' : 'bg-white/5 hover:bg-white/10'
-                    }`}
-                  >
-                    👁 Preview
-                  </button>
-                  <button
-                    onClick={() => {
-                      setViewMode('code');
-                      setIsEditingPreview(false);
-                    }}
-                    className={`text-xs px-3 py-1 border-l border-white/10 transition-colors ${
-                      viewMode === 'code' ? 'bg-white/10' : 'bg-white/5 hover:bg-white/10'
-                    }`}
-                  >
-                    &lt;/&gt; Code
-                  </button>
-                </div>
               </div>
             </div>
 
             <div className="flex-1 overflow-auto p-6 bg-gradient-to-br from-slate-800/50 to-slate-900/50">
-              {viewMode === 'code' ? (
-                <div className="bg-slate-900 rounded-lg border border-white/10 overflow-hidden h-full flex flex-col">
-                  <div className="px-4 py-2 bg-black/40 border-b border-white/10 flex items-center justify-between">
-                    <span className="text-xs text-gray-400 font-mono">HTML + Mapp Template</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => navigator.clipboard.writeText(emailHtml ?? '')}
-                        disabled={!emailHtml}
-                        className="text-xs px-2 py-1 bg-white/5 hover:bg-white/10 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        📋 Copy
-                      </button>
-                    </div>
+              {showHtmlEditor ? (
+                htmlEditorLayout === 'split' ? (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 h-full">
+                    <div className="flex flex-col h-full xl:order-1">{previewPane}</div>
+                    <div className="flex flex-col h-full xl:order-2">{htmlEditorPane}</div>
                   </div>
-                  <textarea
-                    value={emailHtml ?? ''}
-                    onChange={(e) => setEmailHtml(e.target.value)}
-                    placeholder="Dein HTML erscheint hier. Du kannst es direkt bearbeiten oder neues HTML einfügen."
-                    className="flex-1 w-full bg-black/50 text-gray-100 font-mono text-xs leading-5 p-4 border-none outline-none resize-none"
-                    spellCheck={false}
-                  />
-                </div>
+                ) : (
+                  <div className="h-full flex flex-col">{htmlEditorPane}</div>
+                )
               ) : (
-                <div
-                  className={`transition-all duration-300 ${
-                    previewMode === 'mobile' ? 'flex justify-center py-6' : 'mx-auto'
-                  }`}
-                >
-                <div
-                  className={`transition-all duration-300 ${
-                    previewMode === 'mobile'
-                      ? 'w-[380px] max-w-full'
-                      : 'max-w-2xl w-full'
-                    }`}
-                  >
-                    <div
-                      className={`transition-all duration-300 ${
-                        previewMode === 'mobile'
-                          ? 'bg-slate-900 rounded-[32px] p-4 shadow-2xl border border-slate-800 min-h-full flex items-center justify-center'
-                          : 'bg-white rounded-lg shadow-2xl border border-white/10 min-h-full'
-                      }`}
-                    >
-                      <div
-                        className={`overflow-hidden ${
-                          previewMode === 'mobile'
-                            ? 'rounded-[22px] bg-white'
-                            : 'rounded-lg bg-white'
-                        }`}
-                      >
-                        <InteractiveEmailPreview
-                          html={isEditingPreview ? emailHtml : emailHtml || null}
-                          onRegenerateImage={handleRegenerateImage}
-                          isGeneratingImage={isGeneratingImage}
-                          isEditable={isEditingPreview}
-                          onHtmlChange={setEmailHtml}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <div className="h-full flex flex-col">{previewPane}</div>
               )}
             </div>
           </div>

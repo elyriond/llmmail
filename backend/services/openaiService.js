@@ -5,6 +5,46 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+function cleanGeneratedHtml(rawHtml) {
+  if (!rawHtml) {
+    return '';
+  }
+
+  let output = rawHtml.trim();
+
+  // Remove fenced code blocks
+  output = output.replace(/```(?:html|HTML)?/g, '').replace(/```/g, '');
+
+  // Strip everything before the actual document starts
+  const lower = output.toLowerCase();
+  const doctypeIdx = lower.indexOf('<!doctype');
+  const htmlIdx = lower.indexOf('<html');
+  let startIdx = -1;
+
+  if (doctypeIdx !== -1) {
+    startIdx = doctypeIdx;
+  } else if (htmlIdx !== -1) {
+    startIdx = htmlIdx;
+  }
+
+  if (startIdx > 0) {
+    output = output.slice(startIdx);
+  }
+
+  // Remove anything after closing html tag or additional fences
+  const fenceIdx = output.indexOf('```');
+  if (fenceIdx !== -1) {
+    output = output.slice(0, fenceIdx);
+  }
+
+  const lastHtmlClose = output.toLowerCase().lastIndexOf('</html>');
+  if (lastHtmlClose !== -1) {
+    output = output.slice(0, lastHtmlClose + '</html>'.length);
+  }
+
+  return output.trim();
+}
+
 /**
  * Generate email content using OpenAI GPT-4
  */
@@ -73,7 +113,8 @@ Create a responsive, mobile-first HTML email using Mapp Engage syntax for person
       temperature: 0.5,
     });
 
-    const html = completion.choices[0].message.content;
+    const rawHtml = completion.choices[0].message.content;
+    const html = cleanGeneratedHtml(rawHtml);
     return { success: true, html };
   } catch (error) {
     console.error('OpenAI API Error:', error);
