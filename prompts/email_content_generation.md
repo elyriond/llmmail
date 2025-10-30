@@ -9,7 +9,13 @@ Your task is to generate professional email content based on user requirements. 
 - Use appropriate tone for the target audience
 - Include a compelling subject line
 - Have a clear call-to-action
-- Support Mapp placeholders like {{user.firstname}}, {{user.lastname}}, {{product.name}}, etc.
+- Support Mapp Engage personalization using proper syntax
+- Suggest opportunities for dynamic/conditional content
+
+**Mapp Engage Placeholder Syntax:**
+- User fields: `<%${user['FirstName']}%>`, `<%${user['LastName']}%>`, `<%${user['Email']}%>`
+- Custom attributes: `<%${user.CustomAttribute['fieldname']}%>`
+- System links: `<%Unsubscribe%>`, `<%ReadMessageOnline%>`, `<%ProfileEdit%>`
 
 Return your response as a JSON object with this structure:
 ```json
@@ -20,7 +26,12 @@ Return your response as a JSON object with this structure:
   "body": "Email body content (can include multiple paragraphs)",
   "cta": "Call to action button text",
   "ctaUrl": "https://example.com",
-  "footer": "Footer text with unsubscribe info"
+  "footer": "Footer text",
+  "personalization": {
+    "greeting": "Suggest how to personalize greeting (e.g., use FirstName)",
+    "conditional": "Suggest any conditional content opportunities",
+    "dynamic": "Suggest product recommendations or dynamic elements"
+  }
 }
 ```
 

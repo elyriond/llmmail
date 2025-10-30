@@ -43,6 +43,22 @@ function initDatabase() {
     )
   `);
 
+  // Client Profile table (single row for settings)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS client_profile (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      website_url TEXT,
+      corporate_identity TEXT,
+      tone_of_voice TEXT,
+      contact_info TEXT,
+      email_config TEXT,
+      content_guidelines TEXT,
+      compliance TEXT,
+      last_scanned_at DATETIME,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   console.log('Database initialized successfully');
 }
 
@@ -154,11 +170,72 @@ const lookFeelService = {
   }
 };
 
+// Client Profile operations (single row)
+const clientProfileService = {
+  get() {
+    const stmt = db.prepare('SELECT * FROM client_profile WHERE id = 1');
+    return stmt.get();
+  },
+
+  upsert(data) {
+    const existing = this.get();
+
+    if (existing) {
+      const stmt = db.prepare(`
+        UPDATE client_profile SET
+          website_url = ?,
+          corporate_identity = ?,
+          tone_of_voice = ?,
+          contact_info = ?,
+          email_config = ?,
+          content_guidelines = ?,
+          compliance = ?,
+          last_scanned_at = ?,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = 1
+      `);
+
+      stmt.run(
+        data.website_url || existing.website_url,
+        data.corporate_identity || existing.corporate_identity,
+        data.tone_of_voice || existing.tone_of_voice,
+        data.contact_info || existing.contact_info,
+        data.email_config || existing.email_config,
+        data.content_guidelines || existing.content_guidelines,
+        data.compliance || existing.compliance,
+        data.last_scanned_at || existing.last_scanned_at
+      );
+    } else {
+      const stmt = db.prepare(`
+        INSERT INTO client_profile (
+          id, website_url, corporate_identity, tone_of_voice,
+          contact_info, email_config, content_guidelines,
+          compliance, last_scanned_at
+        ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      stmt.run(
+        data.website_url || null,
+        data.corporate_identity || null,
+        data.tone_of_voice || null,
+        data.contact_info || null,
+        data.email_config || null,
+        data.content_guidelines || null,
+        data.compliance || null,
+        data.last_scanned_at || null
+      );
+    }
+
+    return this.get();
+  }
+};
+
 // Initialize database on module load
 initDatabase();
 
 module.exports = {
   db,
   templateService,
-  lookFeelService
+  lookFeelService,
+  clientProfileService
 };

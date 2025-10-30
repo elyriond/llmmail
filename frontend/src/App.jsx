@@ -1,4 +1,7 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import InteractiveEmailPreview from './components/InteractiveEmailPreview';
+import ClarificationDialog from './components/ClarificationDialog';
 
 function App() {
   const [messages, setMessages] = useState([]);
@@ -12,6 +15,15 @@ function App() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [templateDescription, setTemplateDescription] = useState('');
+  const [viewMode, setViewMode] = useState('preview'); // 'preview' or 'code'
+  const [showMappHelper, setShowMappHelper] = useState(false);
+  const [generatedImages, setGeneratedImages] = useState([]);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [emailImages, setEmailImages] = useState([]); // Images included in the email
+  const [showClarificationDialog, setShowClarificationDialog] = useState(false);
+  const [clarifyingQuestions, setClarifyingQuestions] = useState([]);
+  const [pendingBrief, setPendingBrief] = useState(null);
+  const [generationStage, setGenerationStage] = useState(''); // Progress indicator
 
   // Load templates on mount
   useEffect(() => {
@@ -39,6 +51,7 @@ function App() {
     setCurrentPrompt(inputValue);
 
     setIsGenerating(true);
+    setGenerationStage('🎨 Creative Director analyzing your request...');
 
     try {
       const response = await fetch('http://localhost:3000/api/generate-email', {
@@ -57,17 +70,45 @@ function App() {
 
       const data = await response.json();
 
+      // Handle requiresSettings
+      if (data.requiresSettings) {
+        setIsGenerating(false);
+        setGenerationStage('');
+        const settingsMessage = {
+          role: 'assistant',
+          content: data.message + '\n\n[Click Settings in the header to configure your profile]'
+        };
+        setMessages(prev => [...prev, settingsMessage]);
+        setInputValue('');
+        return;
+      }
+
+      // Handle needsClarification
+      if (data.needsClarification) {
+        setIsGenerating(false);
+        setGenerationStage('');
+        setClarifyingQuestions(data.questions);
+        setPendingBrief(data.brief);
+        setShowClarificationDialog(true);
+        setInputValue('');
+        return;
+      }
+
       if (data.success) {
+        setGenerationStage('✅ Campaign complete!');
+
         // Add AI response to chat
+        const imageCount = data.images?.length || 0;
         const aiMessage = {
           role: 'assistant',
-          content: `I've created your email template: "${data.content.subject}"`
+          content: `I've created your professional email campaign: "${data.content.subject}"${imageCount > 0 ? ` with ${imageCount} custom AI-generated image${imageCount > 1 ? 's' : ''}` : ''}`
         };
         setMessages(prev => [...prev, aiMessage]);
 
         // Update email preview and content
         setEmailHtml(data.html);
         setEmailContent(data.content);
+        setEmailImages(data.images || []);
       } else {
         const errorMessage = {
           role: 'assistant',
@@ -83,6 +124,7 @@ function App() {
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsGenerating(false);
+      setGenerationStage('');
       setInputValue('');
     }
   };
@@ -153,6 +195,170 @@ function App() {
     }
   };
 
+  const handleGenerateImage = async (imagePrompt) => {
+    setIsGeneratingImage(true);
+
+    // Add message about generating image
+    const generatingMessage = {
+      role: 'assistant',
+      content: `Generating image: "${imagePrompt}"`
+    };
+    setMessages(prev => [...prev, generatingMessage]);
+
+    try {
+      const response = await fetch('http://localhost:3000/api/generate-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: imagePrompt,
+          quality: 'hd',
+          style: 'vivid'
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setGeneratedImages(prev => [...prev, data]);
+
+        const successMessage = {
+          role: 'assistant',
+          content: `Image generated successfully!`,
+          image: data.imageUrl
+        };
+        setMessages(prev => [...prev, successMessage]);
+      } else {
+        const errorMessage = {
+          role: 'assistant',
+          content: `Error generating image: ${data.error}`
+        };
+        setMessages(prev => [...prev, errorMessage]);
+      }
+    } catch (error) {
+      const errorMessage = {
+        role: 'assistant',
+        content: `Error: ${error.message}`
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsGeneratingImage(false);
+    }
+  };
+
+  const handleRegenerateImage = async (imageUrl) => {
+    setIsGeneratingImage(true);
+
+    try {
+      const prompt = window.prompt('Enter new image description (or leave empty to regenerate with original prompt):');
+      if (prompt === null) {
+        setIsGeneratingImage(false);
+        return;
+      }
+
+      // Find original image to get its prompt
+      const originalImage = emailImages.find(img => img.url === imageUrl);
+      const imagePrompt = prompt || originalImage?.prompt || 'Professional email marketing image';
+
+      const response = await fetch('http://localhost:3000/api/generate-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: imagePrompt,
+          quality: 'hd',
+          style: 'vivid'
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Replace the image in the HTML
+        const newHtml = emailHtml.replace(imageUrl, data.imageUrl);
+        setEmailHtml(newHtml);
+
+        // Update emailImages array
+        setEmailImages(prev => prev.map(img =>
+          img.url === imageUrl
+            ? { url: data.imageUrl, prompt: imagePrompt, revisedPrompt: data.revisedPrompt }
+            : img
+        ));
+
+        const successMessage = {
+          role: 'assistant',
+          content: `Image regenerated successfully!`
+        };
+        setMessages(prev => [...prev, successMessage]);
+      }
+    } catch (error) {
+      console.error('Image regeneration error:', error);
+    } finally {
+      setIsGeneratingImage(false);
+    }
+  };
+
+  const handleAnswersSubmit = async (answers) => {
+    try {
+      setShowClarificationDialog(false);
+      setIsGenerating(true);
+      setGenerationStage('🔄 Refining campaign with your answers...');
+
+      const response = await fetch('http://localhost:3000/api/generate-email-with-answers', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          brief: pendingBrief,
+          answers: answers,
+          lookAndFeel: {
+            brandColor: '#6366f1',
+            accentColor: '#ec4899',
+          }
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setGenerationStage('✅ Campaign complete!');
+
+        // Add AI response to chat
+        const imageCount = data.images?.length || 0;
+        const aiMessage = {
+          role: 'assistant',
+          content: `I've refined your campaign based on your answers: "${data.content.subject}"${imageCount > 0 ? ` with ${imageCount} custom AI-generated image${imageCount > 1 ? 's' : ''}` : ''}`
+        };
+        setMessages(prev => [...prev, aiMessage]);
+
+        // Update email preview and content
+        setEmailHtml(data.html);
+        setEmailContent(data.content);
+        setEmailImages(data.images || []);
+      } else {
+        const errorMessage = {
+          role: 'assistant',
+          content: `Error: ${data.error}`
+        };
+        setMessages(prev => [...prev, errorMessage]);
+      }
+    } catch (error) {
+      const errorMessage = {
+        role: 'assistant',
+        content: `Error: ${error.message}`
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsGenerating(false);
+      setGenerationStage('');
+      setPendingBrief(null);
+      setClarifyingQuestions([]);
+    }
+  };
+
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -183,9 +389,9 @@ function App() {
             >
               💾 Templates {templates.length > 0 && `(${templates.length})`}
             </button>
-            <button className="text-sm text-gray-300 hover:text-white transition-colors">
+            <Link to="/settings" className="text-sm text-gray-300 hover:text-white transition-colors">
               ⚙️ Settings
-            </button>
+            </Link>
           </div>
         </div>
       </header>
@@ -254,6 +460,30 @@ function App() {
                     }`}
                   >
                     <p className="text-sm">{message.content}</p>
+                    {message.image && (
+                      <div className="mt-3 rounded-lg overflow-hidden border border-white/20">
+                        <img
+                          src={message.image}
+                          alt="Generated"
+                          className="w-full h-auto"
+                        />
+                        <div className="p-2 bg-black/20 flex gap-2">
+                          <button
+                            onClick={() => navigator.clipboard.writeText(message.image)}
+                            className="text-xs px-2 py-1 bg-white/10 hover:bg-white/20 rounded transition-colors"
+                          >
+                            📋 Copy URL
+                          </button>
+                          <a
+                            href={message.image}
+                            download
+                            className="text-xs px-2 py-1 bg-white/10 hover:bg-white/20 rounded transition-colors"
+                          >
+                            💾 Download
+                          </a>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   {message.role === 'user' && (
                     <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-cyan-600 rounded-full flex items-center justify-center flex-shrink-0">
@@ -270,10 +500,15 @@ function App() {
                     🤖
                   </div>
                   <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-                    <div className="flex gap-2">
-                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex gap-2">
+                        <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
+                        <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                        <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+                      </div>
+                      {generationStage && (
+                        <p className="text-sm text-gray-300">{generationStage}</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -300,9 +535,18 @@ function App() {
                 </button>
               </div>
               <div className="flex justify-between items-center mt-3">
-                <button className="text-sm text-gray-400 hover:text-purple-400 transition-colors flex items-center gap-2">
-                  <span>📎</span> Upload Image or URL
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      const prompt = window.prompt('Enter image description:');
+                      if (prompt) handleGenerateImage(prompt);
+                    }}
+                    disabled={isGeneratingImage}
+                    className="text-sm text-gray-400 hover:text-purple-400 transition-colors flex items-center gap-2 disabled:opacity-50"
+                  >
+                    <span>🎨</span> Generate Image
+                  </button>
+                </div>
                 <button
                   onClick={handleGenerate}
                   disabled={isGenerating || !inputValue.trim()}
@@ -318,52 +562,88 @@ function App() {
           <div className="flex flex-col bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 overflow-hidden">
             <div className="px-6 py-4 border-b border-white/10 bg-black/20 flex items-center justify-between">
               <h2 className="font-semibold text-lg flex items-center gap-2">
-                <span className="text-purple-400">👁</span>
-                Email Preview
+                <span className="text-purple-400">{viewMode === 'preview' ? '👁' : '💻'}</span>
+                {viewMode === 'preview' ? 'Interactive Preview' : 'Mapp Template Code'}
               </h2>
               <div className="flex items-center gap-2">
                 {emailHtml && (
-                  <button
-                    onClick={() => setShowSaveModal(true)}
-                    className="text-xs px-3 py-1 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg font-medium transition-colors"
-                  >
-                    💾 Save Template
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setShowMappHelper(!showMappHelper)}
+                      className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
+                        showMappHelper
+                          ? 'bg-purple-500 border-purple-400'
+                          : 'bg-white/5 hover:bg-white/10 border-white/10'
+                      }`}
+                    >
+                      📝 Mapp Helper
+                    </button>
+                    <button
+                      onClick={() => setShowSaveModal(true)}
+                      className="text-xs px-3 py-1 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg font-medium transition-colors"
+                    >
+                      💾 Save
+                    </button>
+                  </>
                 )}
-                <button className="text-xs px-3 py-1 bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 transition-colors">
-                  💻 Desktop
-                </button>
-                <button className="text-xs px-3 py-1 bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 transition-colors">
-                  📱 Mobile
-                </button>
-                <button className="text-xs px-3 py-1 bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 transition-colors">
-                  &lt;/&gt; Code
-                </button>
+                <div className="flex border border-white/10 rounded-lg overflow-hidden">
+                  <button
+                    onClick={() => setViewMode('preview')}
+                    className={`text-xs px-3 py-1 transition-colors ${
+                      viewMode === 'preview' ? 'bg-white/10' : 'bg-white/5 hover:bg-white/10'
+                    }`}
+                  >
+                    👁 Preview
+                  </button>
+                  <button
+                    onClick={() => setViewMode('code')}
+                    className={`text-xs px-3 py-1 border-l border-white/10 transition-colors ${
+                      viewMode === 'code' ? 'bg-white/10' : 'bg-white/5 hover:bg-white/10'
+                    }`}
+                  >
+                    &lt;/&gt; Code
+                  </button>
+                </div>
               </div>
             </div>
 
             <div className="flex-1 overflow-auto p-6 bg-gradient-to-br from-slate-800/50 to-slate-900/50">
-              {/* Preview Container */}
-              <div className="max-w-xl mx-auto bg-white rounded-lg shadow-2xl min-h-full">
-                {emailHtml ? (
-                  <iframe
-                    srcDoc={emailHtml}
-                    className="w-full h-full min-h-[600px] rounded-lg"
-                    title="Email Preview"
-                    sandbox="allow-same-origin"
-                  />
-                ) : (
-                  <div className="p-8 text-center text-gray-400">
-                    <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-purple-100 to-pink-100 rounded-full flex items-center justify-center text-4xl">
-                      📧
+              {emailHtml ? (
+                viewMode === 'code' ? (
+                  /* Code View */
+                  <div className="bg-slate-900 rounded-lg border border-white/10 overflow-hidden h-full">
+                    <div className="px-4 py-2 bg-black/40 border-b border-white/10 flex items-center justify-between">
+                      <span className="text-xs text-gray-400 font-mono">HTML + Mapp Template</span>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(emailHtml)}
+                        className="text-xs px-2 py-1 bg-white/5 hover:bg-white/10 rounded transition-colors"
+                      >
+                        📋 Copy
+                      </button>
                     </div>
-                    <p className="font-semibold text-gray-600 mb-2">No Email Generated Yet</p>
-                    <p className="text-sm text-gray-500">
-                      Start a conversation to create your email campaign
-                    </p>
+                    <pre className="p-4 text-xs text-gray-300 font-mono overflow-auto h-[calc(100%-40px)]">
+                      <code>{emailHtml}</code>
+                    </pre>
                   </div>
-                )}
-              </div>
+                ) : (
+                  /* Preview */
+                  <div className="bg-white rounded-lg shadow-2xl overflow-auto h-full max-w-2xl mx-auto">
+                    <InteractiveEmailPreview
+                      html={emailHtml}
+                      onRegenerateImage={handleRegenerateImage}
+                      isGeneratingImage={isGeneratingImage}
+                    />
+                  </div>
+                )
+              ) : (
+                <div className="max-w-xl mx-auto bg-white rounded-lg shadow-2xl min-h-full">
+                  <InteractiveEmailPreview
+                    html={null}
+                    onRegenerateImage={handleRegenerateImage}
+                    isGeneratingImage={isGeneratingImage}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -468,6 +748,146 @@ function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Mapp Helper Panel */}
+      {showMappHelper && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-end z-50" onClick={() => setShowMappHelper(false)}>
+          <div
+            className="bg-gradient-to-br from-slate-800 to-slate-900 border-l border-white/10 h-full w-full max-w-lg overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                <span>📝</span> Mapp Engage Syntax
+              </h3>
+              <button
+                onClick={() => setShowMappHelper(false)}
+                className="w-8 h-8 hover:bg-white/10 rounded-lg flex items-center justify-center transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* User Fields */}
+              <div>
+                <h4 className="font-semibold text-purple-400 mb-3">User Fields</h4>
+                <div className="space-y-2 font-mono text-xs">
+                  <div className="bg-white/5 border border-white/10 rounded p-2">
+                    <code className="text-green-400">&lt;%${`{user['FirstName']}`}%&gt;</code>
+                    <span className="text-gray-400 ml-2">- First Name</span>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded p-2">
+                    <code className="text-green-400">&lt;%${`{user['LastName']}`}%&gt;</code>
+                    <span className="text-gray-400 ml-2">- Last Name</span>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded p-2">
+                    <code className="text-green-400">&lt;%${`{user['Email']}`}%&gt;</code>
+                    <span className="text-gray-400 ml-2">- Email Address</span>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded p-2">
+                    <code className="text-green-400">&lt;%${`{user['Title']}`}%&gt;</code>
+                    <span className="text-gray-400 ml-2">- Title (Mr., Ms., etc.)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Custom Fields */}
+              <div>
+                <h4 className="font-semibold text-purple-400 mb-3">Custom Attributes</h4>
+                <div className="space-y-2 font-mono text-xs">
+                  <div className="bg-white/5 border border-white/10 rounded p-2">
+                    <code className="text-yellow-400">&lt;%${`{user.CustomAttribute['fieldname']}`}%&gt;</code>
+                    <span className="text-gray-400 ml-2">- Custom Field</span>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded p-2">
+                    <code className="text-yellow-400">&lt;%${`{user.MemberAttribute['LastPurchase']}`}%&gt;</code>
+                    <span className="text-gray-400 ml-2">- Member Attribute</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* System Links */}
+              <div>
+                <h4 className="font-semibold text-purple-400 mb-3">System Links</h4>
+                <div className="space-y-2 font-mono text-xs">
+                  <div className="bg-white/5 border border-white/10 rounded p-2">
+                    <code className="text-blue-400">&lt;%Unsubscribe%&gt;</code>
+                    <span className="text-gray-400 ml-2">- Unsubscribe Link</span>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded p-2">
+                    <code className="text-blue-400">&lt;%ReadMessageOnline%&gt;</code>
+                    <span className="text-gray-400 ml-2">- View Online Link</span>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded p-2">
+                    <code className="text-blue-400">&lt;%ProfileEdit%&gt;</code>
+                    <span className="text-gray-400 ml-2">- Profile Edit Link</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Conditional Logic */}
+              <div>
+                <h4 className="font-semibold text-purple-400 mb-3">Conditional Content</h4>
+                <div className="bg-white/5 border border-white/10 rounded p-3 font-mono text-xs">
+                  <pre className="text-pink-400 whitespace-pre-wrap">{`<%If expression="\${user['FirstName'] != null}"%>
+  Hello <%\${user['FirstName']}%>!
+<%Else%>
+  Hello valued customer!
+<%/If%>`}</pre>
+                </div>
+              </div>
+
+              {/* Product Loops */}
+              <div>
+                <h4 className="font-semibold text-purple-400 mb-3">Product Recommendations</h4>
+                <div className="bg-white/5 border border-white/10 rounded p-3 font-mono text-xs">
+                  <pre className="text-orange-400 whitespace-pre-wrap">{`<%ForEach var="product" items="\${ecx:recommendedProducts('PRECALC', user.pk, '3', 500)}"%>
+  <div>
+    <h3><%\${product.productName}%></h3>
+    <p>$<%\${product.productPrice}%></p>
+  </div>
+<%/ForEach%>`}</pre>
+                </div>
+              </div>
+
+              {/* Functions */}
+              <div>
+                <h4 className="font-semibold text-purple-400 mb-3">Common Functions</h4>
+                <div className="space-y-2 font-mono text-xs">
+                  <div className="bg-white/5 border border-white/10 rounded p-2">
+                    <code className="text-cyan-400">&lt;%${`{ecx:capitalizeFirstLetter(user['FirstName'])}`}%&gt;</code>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded p-2">
+                    <code className="text-cyan-400">&lt;%${`{ecx:formatDate(date, 'MMMM d, yyyy')}`}%&gt;</code>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded p-2">
+                    <code className="text-cyan-400">&lt;%${`{ecx:formatNumber(price, 2, '.', ',')}`}%&gt;</code>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clarification Dialog */}
+      {showClarificationDialog && (
+        <ClarificationDialog
+          questions={clarifyingQuestions}
+          onSubmit={handleAnswersSubmit}
+          onCancel={() => {
+            setShowClarificationDialog(false);
+            setPendingBrief(null);
+            setClarifyingQuestions([]);
+            const cancelMessage = {
+              role: 'assistant',
+              content: 'No problem! Feel free to provide a more detailed request when you\'re ready.'
+            };
+            setMessages(prev => [...prev, cancelMessage]);
+          }}
+        />
       )}
     </div>
   );
