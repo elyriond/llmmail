@@ -1,48 +1,38 @@
-const OpenAI = require('openai');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { loadPrompt } = require('../utils/promptLoader');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { cleanAndParseJson } = require('../utils/jsonUtils');
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const geminiModel = gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 /**
  * "Researcher" - Browses the site to analyze content, tone, and imagery.
  */
 async function analyzeContent(url) {
-  console.log('Analyzing website content with GPT-4o...');
+  console.log('Analyzing website content with Gemini 2.5 Flash...');
   const prompt = loadPrompt('website_content_analysis');
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      { role: 'system', content: prompt.systemPrompt },
-      { role: 'user', content: `Please browse the website ${url} and extract the requested brand and content information.` }
-    ],
-    response_format: { type: 'json_object' },
-  });
-  return JSON.parse(completion.choices[0].message.content);
+  const geminiPrompt = prompt.systemPrompt + `\n\nPlease browse the website ${url} and extract the requested brand and content information. Respond with a valid Markdown document.`;
+
+  try {
+    const result = await geminiModel.generateContent({
+      contents: [{ role: "user", parts: [{ text: geminiPrompt }] }],
+    });
+    const response = result.response;
+    return response.text();
+  } catch (geminiError) {
+    console.error('Gemini browsing failed:', geminiError);
+    throw new Error(`Gemini browsing failed: ${geminiError.message}`);
+  }
 }
 
 /**
  * "Developer" - Analyzes HTML/CSS to extract technical style facts.
  */
 async function extractTechnicalStyles(url, htmlContent) {
-  console.log('Extracting technical styles from code with GPT-5-Codex...');
-  const $ = cheerio.load(htmlContent);
-
-  // 1. Extract all possible logo URLs from the header/nav
-  const potentialLogoUrls = [];
-  $('header img, nav img, header svg, nav svg').each((i, el) => {
-    const src = $(el).attr('src') || $(el).find('use').attr('xlink:href');
-    if (src) {
-      try {
-        potentialLogoUrls.push(new URL(src, url).href);
-      } catch (e) { /* Ignore invalid URLs */ }
-    }
-  });
-
-  // 2. Fetch all CSS content
+  console.log('Extracting technical styles from code with Gemini 2.5 Flash...');
+  // 2. Fetch all CSS content without truncation
   const stylesheetUrls = [];
   $('link[rel="stylesheet"]').each((i, el) => {
     const href = $(el).attr('href');
@@ -52,37 +42,37 @@ async function extractTechnicalStyles(url, htmlContent) {
       } catch (e) { /* Ignore invalid URLs */ }
     }
   });
-  const cssContents = await Promise.all(
-    stylesheetUrls.map(sheetUrl => axios.get(sheetUrl, { timeout: 5000 }).then(res => res.data).catch(() => ''))
-  );
-  const combinedCss = cssContents.join('\n');
 
-  // 3. Call the AI with the extracted code and logo list
-  const prompt = loadPrompt('technical_style_extraction');
-  const completion = await openai.chat.completions.create({
-    model: "gpt-5-codex",
-    messages: [
-      { role: 'system', content: prompt.systemPrompt },
-      {
-        role: 'user',
-        content: `Analyze the following code from ${url} to extract the technical style information.\n\n        Potential Logo URLs (select the best one):\n        ${potentialLogoUrls.join('\n')}\n\n        HTML:\n        \
-\
-\
-html\n        ${htmlContent}\n        \
-\
-\
-\n        CSS:\n        \
-\
-\
-css\n        ${combinedCss}\n        \
-\
-\
-\n        `
-      }
-    ],
-    response_format: { type: 'json_object' },
-  });
-  return JSON.parse(completion.choices[0].message.content);
+  console.log('Attempting to fetch the following CSS files:', stylesheetUrls);
+
+  const cssContents = await Promise.all(
+    stylesheetUrls.map(sheetUrl => 
+      axios.get(sheetUrl, { timeout: 5000 })
+        .then(res => {
+          console.log(`✅ Successfully fetched CSS from: ${sheetUrl}`);
+          return res.data;
+        })
+        .catch(err => {
+          console.error(`❌ Failed to fetch CSS from: ${sheetUrl}. Reason: ${err.message}`);
+          return ''; // Return empty string on failure
+        })
+    )
+  );
+
+  // Simplified technical scan for Markdown
+  const prompt = loadPrompt('technical_style_extraction'); // Assuming this prompt is also updated for Markdown
+  const geminiPrompt = prompt.systemPrompt + `\n\nAnalyze the following code from ${url} to extract technical style information into a Markdown format.\n\nHTML:\n\`\`\`html\n${htmlContent}\n\`\`\`\n`;
+
+  try {
+    const result = await geminiModel.generateContent({
+      contents: [{ role: "user", parts: [{ text: geminiPrompt }] }],
+    });
+    const response = result.response;
+    return response.text();
+  } catch (geminiError) {
+    console.error('Gemini technical scan failed:', geminiError);
+    throw new Error(`Gemini technical scan failed: ${geminiError.message}`);
+  }
 }
 
 /**
@@ -101,14 +91,11 @@ async function scanWebsite(url) {
       extractTechnicalStyles(url, htmlContent)
     ]);
 
-    // Merge the results, with "Developer" data taking precedence
-    const combinedData = {
-      ...researcherResult,
-      ...developerResult,
-    };
+    // Merge the Markdown results into a single document
+    const combinedData = `${researcherResult}\n\n---\n\n${developerResult}`;
 
-    console.log('--- Combined AI Analysis Result ---');
-    console.log(JSON.stringify(combinedData, null, 2));
+    console.log('--- Combined AI Analysis Result (Markdown) ---');
+    console.log(combinedData);
     console.log('------------------------------------');
 
     return { success: true, data: combinedData };

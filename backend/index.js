@@ -2,7 +2,7 @@ require('dotenv').config({ path: '../.env' });
 const express = require('express');
 const cors = require('cors');
 const { generateEmailCampaign, generateCampaignWithAnswers } = require('./services/openaiService');
-const { scanWebsite, quickScan } = require('./services/websiteScanner');
+const { scanWebsite } = require('./services/websiteScanner');
 
 const app = express();
 const port = 3000;
@@ -42,11 +42,7 @@ app.post('/api/generate-email', async (req, res) => {
     if (profile) {
       companySettings = {
         website_url: profile.website_url,
-        corporate_identity: profile.corporate_identity ? JSON.parse(profile.corporate_identity) : null,
-        tone_of_voice: profile.tone_of_voice ? JSON.parse(profile.tone_of_voice) : null,
-        contact_info: profile.contact_info ? JSON.parse(profile.contact_info) : null,
-        email_config: profile.email_config ? JSON.parse(profile.email_config) : null,
-        content_guidelines: profile.content_guidelines ? JSON.parse(profile.content_guidelines) : null
+        full_scan_markdown: profile.full_scan_markdown
       };
     }
 
@@ -98,8 +94,7 @@ app.post('/api/generate-email-with-answers', async (req, res) => {
     let companySettings = null;
     if (profile) {
       companySettings = {
-        corporate_identity: profile.corporate_identity ? JSON.parse(profile.corporate_identity) : null,
-        tone_of_voice: profile.tone_of_voice ? JSON.parse(profile.tone_of_voice) : null
+        full_scan_markdown: profile.full_scan_markdown
       };
     }
 
@@ -119,17 +114,20 @@ app.post('/api/generate-email-with-answers', async (req, res) => {
   }
 });
 
-// Test OpenAI connection
+// Test API Key connections
 app.get('/api/test', (req, res) => {
-  const hasApiKey = !!process.env.OPENAI_API_KEY;
+  const hasOpenAIKey = !!process.env.OPENAI_API_KEY;
+  const hasGeminiKey = !!process.env.GEMINI_API_KEY;
   res.json({
-    openaiConfigured: hasApiKey,
-    apiKeyPrefix: hasApiKey ? process.env.OPENAI_API_KEY.substring(0, 10) + '...' : 'Not set'
+    openaiConfigured: hasOpenAIKey,
+    openaiApiKeyPrefix: hasOpenAIKey ? process.env.OPENAI_API_KEY.substring(0, 10) + '...' : 'Not set',
+    geminiConfigured: hasGeminiKey,
+    geminiApiKeyPrefix: hasGeminiKey ? process.env.GEMINI_API_KEY.substring(0, 10) + '...' : 'Not set'
   });
 });
 
 // Template endpoints
-const { templateService, lookFeelService, clientProfileService } = require('./services/database');
+const { templateService, lookFeelService, brandProfileService } = require('./services/database');
 
 // Save template
 app.post('/api/templates', (req, res) => {
@@ -315,7 +313,7 @@ app.post('/api/look-feel', (req, res) => {
 // Get current settings
 app.get('/api/settings', (req, res) => {
   try {
-    const profile = clientProfileService.get();
+    const profile = brandProfileService.get();
 
     if (!profile) {
       return res.json({
@@ -325,22 +323,9 @@ app.get('/api/settings', (req, res) => {
       });
     }
 
-    // Parse JSON fields
-    const settings = {
-      website_url: profile.website_url,
-      corporate_identity: profile.corporate_identity ? JSON.parse(profile.corporate_identity) : null,
-      tone_of_voice: profile.tone_of_voice ? JSON.parse(profile.tone_of_voice) : null,
-      contact_info: profile.contact_info ? JSON.parse(profile.contact_info) : null,
-      email_config: profile.email_config ? JSON.parse(profile.email_config) : null,
-      content_guidelines: profile.content_guidelines ? JSON.parse(profile.content_guidelines) : null,
-      compliance: profile.compliance ? JSON.parse(profile.compliance) : null,
-      last_scanned_at: profile.last_scanned_at,
-      updated_at: profile.updated_at
-    };
-
     res.json({
       success: true,
-      settings
+      settings: profile
     });
   } catch (error) {
     console.error('Settings fetch error:', error);
@@ -391,64 +376,18 @@ app.post('/api/settings/scan', async (req, res) => {
       return res.status(500).json(scanResult);
     }
 
-    // --- AI Response Adapter/Mapper ---
-    // This maps the clean, combined data from our two-step analysis
-    // to the nested structure our application uses.
-    const aiData = scanResult.data;
-
-    const settingsToSave = {
+    const profileToSave = {
       website_url: url,
-      corporate_identity: JSON.stringify({
-        companyName: aiData.companyName || url.split('/')[2],
-        logoUrl: aiData.logoUrl,
-        brandColors: aiData.brandColors || [], // Pass the full array
-        typography: {
-          primaryFont: aiData.typography?.bodyFont,
-          headingFont: aiData.typography?.headingFont,
-        },
-        tagline: aiData.tagline,
-      }),
-      tone_of_voice: JSON.stringify({
-        style: aiData.toneAndVoice?.description,
-        imageStyle: aiData.imageStyle,
-        language: aiData.language,
-      }),
-      contact_info: JSON.stringify({
-        phone: aiData.contact?.phone,
-        email: aiData.contact?.email,
-        socialMedia: {
-          linkedin: aiData.social?.linkedin,
-          instagram: aiData.social?.instagram,
-        },
-      }),
-      email_config: JSON.stringify({
-        // These are not part of the new analysis, so we initialize them.
-        // We could add them to the "Researcher" prompt if needed.
-      }),
-      compliance: JSON.stringify({
-        privacyPolicyUrl: aiData.legal?.privacyPolicyUrl,
-        termsOfServiceUrl: aiData.legal?.termsOfServiceUrl,
-      }),
+      full_scan_markdown: scanResult.data, // This is now a Markdown string
       last_scanned_at: new Date().toISOString()
     };
     
-    clientProfileService.upsert(settingsToSave);
-
-    // We need to send back the data in the format the frontend expects
-    const frontendData = {
-        website_url: settingsToSave.website_url,
-        corporate_identity: JSON.parse(settingsToSave.corporate_identity),
-        tone_of_voice: JSON.parse(settingsToSave.tone_of_voice),
-        contact_info: JSON.parse(settingsToSave.contact_info),
-        email_config: JSON.parse(settingsToSave.email_config),
-        compliance: JSON.parse(settingsToSave.compliance),
-        content_guidelines: {}, // Initialize empty
-    };
+    const savedProfile = brandProfileService.upsert(profileToSave);
 
     res.json({
       success: true,
       message: 'Website scanned and settings updated',
-      data: frontendData
+      data: savedProfile
     });
 
   } catch (error) {
@@ -460,52 +399,20 @@ app.post('/api/settings/scan', async (req, res) => {
   }
 });
 
-// Quick scan (just basic info)
-app.post('/api/settings/quick-scan', async (req, res) => {
-  try {
-    const { url } = req.body;
 
-    if (!url) {
-      return res.status(400).json({
-        success: false,
-        error: 'URL is required'
-      });
-    }
-
-    const result = await quickScan(url);
-    res.json(result);
-
-  } catch (error) {
-    console.error('Quick scan error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
 
 // Update settings (manual edits)
 app.put('/api/settings', (req, res) => {
   try {
-    const {
-      website_url,
-      corporate_identity,
-      tone_of_voice,
-      contact_info,
-      email_config,
-      content_guidelines,
-      compliance
-    } = req.body;
+    const settings = req.body;
 
-    clientProfileService.upsert({
-      website_url,
-      corporate_identity: corporate_identity ? JSON.stringify(corporate_identity) : null,
-      tone_of_voice: tone_of_voice ? JSON.stringify(tone_of_voice) : null,
-      contact_info: contact_info ? JSON.stringify(contact_info) : null,
-      email_config: email_config ? JSON.stringify(email_config) : null,
-      content_guidelines: content_guidelines ? JSON.stringify(content_guidelines) : null,
-      compliance: compliance ? JSON.stringify(compliance) : null
-    });
+    const profileToSave = {
+      website_url: settings.website_url,
+      full_scan_markdown: settings.full_scan_markdown,
+      last_scanned_at: settings.last_scanned_at,
+    };
+
+    brandProfileService.upsert(profileToSave);
 
     res.json({
       success: true,
@@ -524,4 +431,5 @@ app.put('/api/settings', (req, res) => {
 app.listen(port, () => {
   console.log(`Backend listening at http://localhost:${port}`);
   console.log(`OpenAI API Key: ${process.env.OPENAI_API_KEY ? 'Configured' : 'Missing'}`);
+  console.log(`Gemini API Key: ${process.env.GEMINI_API_KEY ? 'Configured' : 'Missing'}`);
 });

@@ -1,34 +1,33 @@
 # LLM-Mail
 
-An AI-powered email template editor for Mapp Engage users. Generate professional HTML email campaigns through natural language prompts using OpenAI GPT-4.
+An AI-powered email campaign generator. Describe your campaign, and the app scans your company website to learn your brand voice, then generates professional, on-brand HTML emails ready for platforms like Mapp Engage.
 
 ![LLM-Mail Interface](style.png)
 
 ## Features
 
-- **🤖 AI-Powered Generation** - Describe your email campaign in natural language, get professional results
-- **📧 Mapp Engage Integration** - Automatic support for Mapp placeholders (`{{user.firstname}}`, `{{product.name}}`, etc.)
-- **💾 Template Management** - Save, load, and reuse email templates with SQLite storage
-- **🎨 Look & Feel Templates** - Store brand colors, logos, and fonts for consistent campaigns
-- **👁 Live Preview** - See your email rendered in real-time
-- **📱 Responsive Design** - Generated emails work across all major email clients (Gmail, Outlook, Apple Mail)
-- **✏️ Editable Prompts** - Customize AI behavior through external markdown prompt files
-- **💬 Conversational Interface** - Chat-based UI inspired by modern AI tools
+- **🤖 AI-Powered Generation** - Describe your email campaign in natural language and get professional results.
+- **🌐 Brand Profile Automation** - Scans your website to automatically learn your brand colors, fonts, logo, tone of voice, and more, ensuring all generated content is perfectly on-brand.
+- **📧 Mapp Engage Ready** - Generates HTML with automatic support for Mapp placeholders (`<%\${user['FirstName']}%>`).
+- **💾 Template Management** - Save, load, and reuse email campaigns.
+- **👁 Live Preview** - See your email rendered in real-time as it's generated.
+- **📱 Responsive Design** - All generated emails are mobile-first and tested across major email clients.
+- **✏️ Editable Prompts** - Customize AI behavior by editing simple markdown files in the `/prompts` directory.
 
 ## Tech Stack
 
 ### Frontend
 - **React 19** - UI library
-- **Vite 7** - Build tool and dev server
-- **Tailwind CSS 4** - Utility-first styling
-- **PostCSS** - CSS processing
+- **Vite** - Build tool and dev server
+- **Tailwind CSS** - Utility-first styling
 
 ### Backend
 - **Node.js** - Runtime environment
-- **Express 5** - Web framework
-- **OpenAI API** - GPT-4o for content and HTML generation
-- **SQLite** (better-sqlite3) - Database for templates
-- **dotenv** - Environment configuration
+- **Express** - Web framework
+- **Gemini API** - For website analysis and brand profile extraction.
+- **OpenAI API** - For creative direction, content, and image generation (DALL-E 3).
+- **SQLite** (better-sqlite3) - Database for storing brand profiles and templates.
+- **Cheerio** - Server-side HTML parsing for technical analysis.
 
 ## Architecture
 
@@ -38,291 +37,111 @@ An AI-powered email template editor for Mapp Engage users. Generate professional
 │  (Port 5173+)   │◀────────│   (Port 3000)    │
 └─────────────────┘         └──────────────────┘
                                      │
-                            ┌────────┴────────┐
-                            ▼                 ▼
-                    ┌──────────────┐  ┌─────────────┐
-                    │  OpenAI API  │  │   SQLite    │
-                    │   (GPT-4o)   │  │  Database   │
-                    └──────────────┘  └─────────────┘
+                            ┌────────┴──────────┐
+                            ▼                   ▼
+                    ┌──────────────┐    ┌─────────────┐
+                    │  Gemini API  │    │ OpenAI API  │
+                    │ (Website Scan) │    │  (Content)  │
+                    └──────────────┘    └─────────────┘
+                                     │
+                                     ▼
+                             ┌─────────────┐
+                             │   SQLite    │
+                             │  Database   │
+                             └─────────────┘
 ```
 
-### Project Structure
-
-```
-llmmail/
-├── frontend/                 # React application
-│   ├── src/
-│   │   ├── App.jsx          # Main UI component
-│   │   ├── main.jsx         # React entry point
-│   │   └── index.css        # Tailwind imports
-│   ├── index.html
-│   ├── vite.config.js
-│   ├── tailwind.config.js
-│   └── package.json
-│
-├── backend/                  # Express server
-│   ├── services/
-│   │   ├── openaiService.js # AI generation logic
-│   │   └── database.js      # SQLite operations
-│   ├── utils/
-│   │   └── promptLoader.js  # Prompt file loader
-│   ├── data/
-│   │   └── llmmail.db       # SQLite database (auto-created)
-│   ├── index.js             # Express server & API routes
-│   └── package.json
-│
-├── prompts/                  # AI prompt templates
-│   ├── email_content_generation.md
-│   ├── email_html_generation.md
-│   └── README.md
-│
-├── docs/                     # Documentation
-├── .env                      # API keys (not in git)
-├── package.json             # Root package (concurrently)
-├── projectplan.md           # 6-sprint development plan (German)
-└── README.md                # This file
-```
-
-## Setup
+## Setup and Running
 
 ### Prerequisites
 
 - Node.js 18+
-- OpenAI API key
-- npm or yarn
+- `npm` (or a compatible package manager)
+- API keys for Google Gemini and OpenAI.
 
-### Installation
+### 1. Installation
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd llmmail
-   ```
+First, install the dependencies for all packages (root, backend, and frontend).
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
+```bash
+# Clone the repository
+git clone <repository-url>
+cd llmmail
 
-3. **Configure environment variables**
+# Install root dependencies
+npm install
 
-   Create a `.env` file in the root directory:
-   ```env
-   OPENAI_API_KEY=your_openai_api_key_here
-   GEMINI_API_KEY=optional_gemini_key
-   ```
+# Install backend dependencies
+cd backend
+npm install
+cd ..
 
-4. **Start the application**
-   ```bash
-   npm start
-   ```
-
-   This will start both frontend and backend servers:
-   - Frontend: http://localhost:5173 (or next available port)
-   - Backend: http://localhost:3000
-
-## Usage
-
-### Generating an Email Template
-
-1. **Describe your campaign** in the chat input:
-   ```
-   "Create a Black Friday sale email with 30% off all products"
-   ```
-
-2. **Review the generated email** in the preview panel
-
-3. **Save as template** by clicking "💾 Save Template"
-
-4. **Name your template** for easy retrieval later
-
-### Loading a Saved Template
-
-1. Click **"💾 Templates"** in the header
-2. Browse your saved templates
-3. Click any template card to load it
-
-### Customizing Prompts
-
-Edit the prompt files in `prompts/` folder to change AI behavior:
-
-- `email_content_generation.md` - Email copywriting instructions
-- `email_html_generation.md` - HTML generation requirements
-
-See `prompts/README.md` for detailed editing guide.
-
-## API Documentation
-
-### Backend Endpoints
-
-#### Email Generation
-
-**POST** `/api/generate-email`
-```json
-{
-  "prompt": "Create a summer sale email",
-  "lookAndFeel": {
-    "brandColor": "#6366f1",
-    "accentColor": "#ec4899",
-    "logoUrl": "https://example.com/logo.png",
-    "fontFamily": "Arial, sans-serif"
-  }
-}
+# Install frontend dependencies
+cd frontend
+npm install
+cd ..
 ```
 
-Response:
-```json
-{
-  "success": true,
-  "content": {
-    "subject": "Email subject",
-    "preheader": "Preview text",
-    "headline": "Main headline",
-    "body": "Email body content",
-    "cta": "Button text",
-    "ctaUrl": "https://example.com",
-    "footer": "Footer text"
-  },
-  "html": "<html>...</html>"
-}
+### 2. Environment Variables
+
+Create a `.env` file in the project's root directory. This file will store your secret API keys.
+
+```env
+# .env
+
+# Required for website scanning and brand analysis
+GEMINI_API_KEY="your_google_gemini_api_key_here"
+
+# Required for email content, creative direction, and image generation
+OPENAI_API_KEY="your_openai_api_key_here"
 ```
 
-#### Template Management
+### 3. Start the Application
 
-**GET** `/api/templates` - Get all templates
-**GET** `/api/templates/:id` - Get specific template
-**POST** `/api/templates` - Save new template
-**PUT** `/api/templates/:id` - Update template
-**DELETE** `/api/templates/:id` - Delete template
+Run the `start` command from the root directory. This will launch both the backend and frontend servers concurrently.
 
-#### Look & Feel Templates
+```bash
+npm start
+```
 
-**GET** `/api/look-feel` - Get all Look & Feel templates
-**POST** `/api/look-feel` - Save new Look & Feel template
+-   **Backend API** will be running at `http://localhost:3000`
+-   **Frontend App** will be running at `http://localhost:5173`
+
+## How It Works
+
+### 1. Brand Profile Setup
+
+-   Navigate to the **Settings** page (⚙️ icon).
+-   Enter your company's website URL (e.g., `example.com`).
+-   Click **"Scan"**. The backend uses the Gemini API to browse the site, analyzing its content and code to extract key brand information.
+-   The extracted data (logo, colors, fonts, tone of voice, etc.) is saved as a single Markdown document in the database. You can edit this Markdown manually at any time.
+
+### 2. Email Generation
+
+-   On the main page, describe the email campaign you want to create.
+-   The backend's "Creative Director" agent uses the saved brand profile Markdown and your prompt to write an expert brief.
+-   This brief is then used by other AI agents to generate the email subject, preheader, body content, and DALL-E 3 image prompts.
+-   Finally, the complete content is compiled into a mobile-first HTML template.
 
 ## Database Schema
 
-### email_templates
-```sql
-CREATE TABLE email_templates (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
-  description TEXT,
-  user_prompt TEXT,
-  subject TEXT,
-  preheader TEXT,
-  html_content TEXT NOT NULL,
-  brand_color TEXT DEFAULT '#6366f1',
-  accent_color TEXT DEFAULT '#ec4899',
-  logo_url TEXT,
-  font_family TEXT DEFAULT 'Arial, sans-serif',
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
+The application uses a single table to store the brand profile.
 
-### look_feel_templates
+### brand_profile
 ```sql
-CREATE TABLE look_feel_templates (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
-  brand_color TEXT NOT NULL,
-  accent_color TEXT NOT NULL,
-  logo_url TEXT,
-  font_family TEXT DEFAULT 'Arial, sans-serif',
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE IF NOT EXISTS brand_profile (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  website_url TEXT,
+  full_scan_markdown TEXT,
+  last_scanned_at DATETIME,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
 ## AI Configuration
 
-### Models Used
+-   **Website Analysis**: Gemini 2.5 Flash (outputs Markdown)
+-   **Creative Direction & Content Generation**: GPT-4o
+-   **Image Generation**: DALL-E 3
 
-- **Content Generation**: GPT-4o (temperature: 0.7)
-- **HTML Generation**: GPT-4o (temperature: 0.5)
-
-### Prompt Engineering
-
-The system uses a 2-step generation process:
-
-1. **Generate Email Content** (`email_content_generation.md`)
-   - Creates subject, body, CTA with Mapp placeholders
-   - Returns structured JSON
-
-2. **Generate HTML** (`email_html_generation.md`)
-   - Converts content to responsive HTML
-   - Inline CSS for email client compatibility
-   - Table-based layout
-
-## Development
-
-### Running in Development Mode
-
-```bash
-# Frontend only
-npm run dev --prefix frontend
-
-# Backend only
-npm start --prefix backend
-
-# Both (recommended)
-npm start
-```
-
-### Building for Production
-
-```bash
-# Frontend build
-npm run build --prefix frontend
-
-# The build output will be in frontend/dist/
-```
-
-## Roadmap
-
-See `projectplan.md` for the complete 6-sprint development plan.
-
-### Current Status: Sprint 1-2 Complete ✅
-- Project setup and architecture
-- OpenAI integration
-- Basic UI with chat interface
-- Template storage with SQLite
-- Prompt management system
-
-### Upcoming Features (Sprint 3-6)
-- [ ] Look & Feel URL extraction (scrape websites for branding)
-- [ ] Desktop/Mobile preview toggle
-- [ ] Code view for HTML editing
-- [ ] Mapp Engage API integration
-- [ ] Template deployment to Mapp
-- [ ] Image generation with DALL-E 3
-- [ ] Advanced template management
-- [ ] Testing and QA
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-[Add your license here]
-
-## Acknowledgments
-
-- OpenAI for GPT-4o API
-- Mapp Engage for email marketing platform
-- Tailwind CSS for styling
-- React and Vite teams
-
-## Support
-
-For issues, questions, or contributions, please open an issue on GitHub.
-
----
-
-**Generated with Claude Code** 🤖
+The prompts that steer the AI models are located in the `/prompts` directory and can be edited to customize the AI's behavior and output format.
