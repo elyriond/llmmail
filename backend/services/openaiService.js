@@ -1,5 +1,8 @@
 const OpenAI = require('openai');
 const { loadPrompt } = require('../utils/promptLoader');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -54,6 +57,11 @@ async function generateEmailContent(userPrompt, lookAndFeel = {}) {
     const prompt = loadPrompt('email_content_generation');
 
     const modelToUse = prompt.settings.model || "gpt-5";
+    console.log('--- generateEmailContent Prompts ---');
+    console.log('System Prompt:', prompt.systemPrompt);
+    console.log('User Prompt:', userPrompt);
+    console.log('-------------------------------------');
+
     const completionParams = {
       model: modelToUse,
       messages: [
@@ -97,9 +105,10 @@ async function generateEmailHTMLFromText(contentText, lookAndFeel = {}, generate
     // Build prompt with content and images
     let imagesInfo = '';
     if (generatedImages.length > 0) {
-      imagesInfo = '\n\nGenerated Images (use these in the email):\n';
+      imagesInfo = '\n\nUse the following images in the email:\n';
       generatedImages.forEach((img, idx) => {
-        imagesInfo += `Image ${idx + 1}: ${img.url}\nDescription: ${img.prompt}\n\n`;
+        // Use a simple placeholder instead of the full data URI
+        imagesInfo += `Image ${idx + 1}: Use placeholder "[IMAGE_${idx + 1}]". Description: ${img.prompt}\n\n`;
       });
     }
 
@@ -133,6 +142,11 @@ Create a responsive, mobile-first HTML email using Mapp Engage syntax for person
       ],
       // No temperature for gpt-5 - uses default (1)
     });
+
+    console.log('--- generateEmailHTMLFromText Prompts ---');
+    console.log('System Prompt:', 'You are an expert Mapp Engage email template developer. Create responsive, mobile-first HTML email templates with proper Mapp syntax.');
+    console.log('User Prompt (HTML):', htmlPrompt);
+    console.log('-----------------------------------------');
 
     const rawHtml = completion.choices[0].message.content;
     const html = cleanGeneratedHtml(rawHtml);
@@ -214,10 +228,22 @@ async function generateEmailCampaign(userPrompt, lookAndFeel = {}, companySettin
     if (onProgress) onProgress('✅ Stage 2 complete: Brand colors extracted!', 'stage2_complete', { brandData: extractedBrandData });
 
     // STAGE 3: Extract and generate images from brief (Images specified in brief!)
-    console.log('🖼️ Stage 3: Generating images from creative brief...');
-    if (onProgress) onProgress('🖼️ Stage 3/5: Generating brand-aligned images from brief...', 'progress');
     const imagePrompts = extractImagePrompts(briefText);
-    const generatedImages = await generateImages(imagePrompts);
+    const generatedImages = [];
+    for (const prompt of imagePrompts) {
+      const result = await generateImage(prompt);
+      if (result.success) {
+        generatedImages.push({
+          url: result.imageUrl,
+          prompt: prompt,
+          revisedPrompt: result.revisedPrompt
+        });
+        if (onProgress) onProgress(result.imageUrl, 'image_generated'); // Send image URL to frontend
+      } else {
+        console.error('Failed to generate image for prompt:', prompt, result.error);
+        if (onProgress) onProgress(`❌ Failed to generate image for: ${prompt}. Error: ${result.error}`, 'error');
+      }
+    }
 
     // Send images result
     if (onProgress) onProgress('✅ Stage 3 complete: Images generated!', 'stage3_complete', { images: generatedImages });
@@ -245,6 +271,13 @@ async function generateEmailCampaign(userPrompt, lookAndFeel = {}, companySettin
       return htmlResult;
     }
 
+    // FINAL STEP: Inject image data URIs into the HTML
+    let finalHtml = htmlResult.html;
+    generatedImages.forEach((img, idx) => {
+      const placeholder = `[IMAGE_${idx + 1}]`;
+      finalHtml = finalHtml.replace(new RegExp(placeholder, 'g'), img.url);
+    });
+
     console.log('✅ Campaign generation complete!');
 
     // Parse basic content fields for frontend display
@@ -253,7 +286,7 @@ async function generateEmailCampaign(userPrompt, lookAndFeel = {}, companySettin
     return {
       success: true,
       content: content,
-      html: htmlResult.html,
+      html: finalHtml, // Send the HTML with embedded images
       images: generatedImages,
       brief: briefText
     };
@@ -298,8 +331,7 @@ function extractBrandAlignment(briefText) {
   if (bodyFontMatch) brandData.bodyFont = bodyFontMatch[1].trim();
 
   // Extract brand voice
-  const brandVoiceMatch = briefText.match(/brand\s+voice[:\s]+([^\n]+)/i) ||
-                          briefText.match(/tone[:\s]+([^\n]+)/i);
+  const brandVoiceMatch = briefText.match(/(?:Tone|Brand Voice):\s*([^\n]+)/i);
   if (brandVoiceMatch) brandData.brandVoice = brandVoiceMatch[1].trim();
 
   console.log('🎨 Extracted brand alignment:', brandData);
@@ -308,22 +340,28 @@ function extractBrandAlignment(briefText) {
 }
 
 /**
- * Extract image prompts from brief text
+ * Extract image prompts from brief text using the new delimiter-based format.
  */
 function extractImagePrompts(briefText) {
   const prompts = [];
-  // Look for image sections marked in the brief
-  const imageMatches = briefText.matchAll(/(?:Image \d+|Hero Image|Product Image)[\s\S]*?(?:Prompt|Description):?\s*([^\n]+(?:\n(?!\n)[^\n]+)*)/gi);
+  const imageMatches = briefText.matchAll(/---IMAGE_PROMPT_START---([\s\S]*?)---IMAGE_PROMPT_END---/g);
 
   for (const match of imageMatches) {
     if (match[1]) {
-      prompts.push(match[1].trim());
+      const cleanedPrompt = match[1].trim();
+      if (cleanedPrompt) {
+        prompts.push(cleanedPrompt);
+        console.log('✅ Extracted image prompt:', cleanedPrompt);
+      }
     }
   }
 
-  // Default to 1-2 generic prompts if none found
+  // Default to 1 generic prompt if none found
   if (prompts.length === 0) {
+    console.warn('⚠️ No specific image prompts found in brief. Falling back to generic prompt.');
     prompts.push('Professional email marketing photography, high quality, brand-aligned aesthetic, clean composition');
+  } else {
+    console.log(`✅ Found ${prompts.length} specific image prompts in brief.`);
   }
 
   return prompts.slice(0, 3); // Max 3 images
@@ -456,50 +494,76 @@ async function generateCampaignWithAnswers(originalBriefText, userAnswers, lookA
   }
 }
 
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
 /**
- * Generate images using DALL-E 3
+ * Generate images using Gemini
  * @param {string} prompt - Description of the image to generate
- * @param {object} options - Generation options (size, quality, style)
  * @returns {Promise<object>} Generated image URL and metadata
  */
-async function generateImage(prompt, options = {}) {
+async function generateImageWithGemini(prompt) {
   try {
-    const {
-      size = '1024x1024', // '1024x1024', '1792x1024', '1024x1792'
-      quality = 'standard', // 'standard' or 'hd'
-      style = 'vivid', // 'vivid' or 'natural'
-      n = 1
-    } = options;
+    console.log('--- Starting Gemini Image Generation ---');
+    console.log('PROMPT:', prompt);
 
-    console.log('Generating image with DALL-E 3:', prompt);
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-image" });
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
 
-    const response = await openai.images.generate({
-      model: 'dall-e-3',
-      prompt: prompt,
-      n: n,
-      size: size,
-      quality: quality,
-      style: style,
-    });
+    if (!response.candidates || response.candidates.length === 0) {
+      throw new Error('No candidates returned from Gemini API.');
+    }
 
-    const imageUrl = response.data[0].url;
-    const revisedPrompt = response.data[0].revised_prompt;
+    const candidate = response.candidates[0];
+    if (candidate.finishReason !== 'STOP' && candidate.finishReason !== 'MAX_TOKENS') {
+        throw new Error(`Image generation stopped for reason: ${candidate.finishReason}`);
+    }
 
-    console.log('Image generated successfully');
+    const imagePart = candidate.content.parts.find(part => part.inlineData && part.inlineData.data);
+
+    if (!imagePart) {
+      console.error('Full Gemini API Response:', JSON.stringify(response, null, 2));
+      throw new Error('No inline image data found in the Gemini API response.');
+    }
+
+    const { mimeType, data } = imagePart.inlineData;
+    
+    // Save the image to a file instead of creating a data URI
+    const imageBuffer = Buffer.from(data, 'base64');
+    const fileExtension = mimeType.split('/')[1] || 'png';
+    const uniqueFilename = `${crypto.randomBytes(16).toString('hex')}.${fileExtension}`;
+    const imagePath = path.join(__dirname, '..', 'temp', 'images', uniqueFilename);
+    
+    await fs.promises.writeFile(imagePath, imageBuffer);
+
+    const imageUrl = `/temp/images/${uniqueFilename}`; // Return a local URL path
+    console.log(`Image generated and saved to: ${imagePath}`);
 
     return {
       success: true,
-      imageUrl,
-      revisedPrompt,
+      imageUrl, // This is now a local URL path
+      revisedPrompt: prompt,
       originalPrompt: prompt
     };
   } catch (error) {
-    console.error('DALL-E API Error:', error);
+    console.error('--- Gemini API Call Failed ---');
+    console.error(error);
     return {
       success: false,
       error: error.message
     };
   }
+}
+
+/**
+ * Generate images using the selected service (now Gemini)
+ * @param {string} prompt - Description of the image to generate
+ * @returns {Promise<object>} Generated image URL and metadata
+ */
+async function generateImage(prompt) {
+  return generateImageWithGemini(prompt);
 }
 
 /**
@@ -513,9 +577,13 @@ async function generateCampaignImages(emailTheme, count = 1) {
     // Generate a more specific prompt for email marketing
     const enhancedPrompt = `Professional email marketing image for ${emailTheme}. Clean, modern design suitable for newsletter. High quality, eye-catching, brand-friendly.`;
 
+    console.log('--- generateCampaignImages Prompt ---');
+    console.log('Enhanced Prompt:', enhancedPrompt);
+    console.log('-------------------------------------');
+
     const images = [];
     for (let i = 0; i < count; i++) {
-      const result = await generateImage(enhancedPrompt, { quality: 'hd', style: 'vivid' });
+      const result = await generateImage(enhancedPrompt);
       if (result.success) {
         images.push(result);
       }

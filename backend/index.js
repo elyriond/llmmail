@@ -1,6 +1,7 @@
 require('dotenv').config({ path: '../.env' });
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const { generateEmailCampaign, generateCampaignWithAnswers } = require('./services/openaiService');
 const { scanWebsite } = require('./services/websiteScanner');
 
@@ -10,6 +11,7 @@ const port = 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use('/temp', express.static(path.join(__dirname, 'temp')));
 
 // Image generation routes
 const imageRoutes = require('./routes/imageRoutes');

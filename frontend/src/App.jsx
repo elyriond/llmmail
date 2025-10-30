@@ -284,10 +284,13 @@ function App() {
               // Stage 2: Show brand colors (REORDERED)
               setGenerationStage(jsonData.message);
               setBrandColors(jsonData.data?.brandData || null);
+            } else if (jsonData.type === 'image_generated') {
+              // Stage 3: Add image as it's generated
+              setEmailImages(prev => [...prev, { url: jsonData.message, prompt: 'Generated during campaign creation' }]);
             } else if (jsonData.type === 'stage3_complete') {
               // Stage 3: Show images (REORDERED)
               setGenerationStage(jsonData.message);
-              setEmailImages(jsonData.data?.images || []);
+              // Note: images are already being added one by one via 'image_generated'
             } else if (jsonData.type === 'stage4_complete') {
               // Stage 4: Show generated content (REORDERED)
               setGenerationStage(jsonData.message);
@@ -623,24 +626,24 @@ function App() {
 
   const previewPane = (
     <div
-      className={`transition-all duration-300 ${
+      className={`transition-all duration-300 ${ 
         previewMode === 'mobile' ? 'flex justify-center py-6' : 'mx-auto'
       }`}
     >
       <div
-        className={`transition-all duration-300 ${
+        className={`transition-all duration-300 ${ 
           previewMode === 'mobile' ? 'w-[380px] max-w-full' : 'max-w-2xl w-full'
         }`}
       >
         <div
-          className={`transition-all duration-300 ${
+          className={`transition-all duration-300 ${ 
             previewMode === 'mobile'
               ? 'bg-slate-900 rounded-[32px] p-4 shadow-2xl border border-slate-800 min-h-full flex items-center justify-center'
               : 'bg-white rounded-lg shadow-2xl border border-white/10 min-h-full'
           }`}
         >
           <div
-            className={`overflow-hidden ${
+            className={`overflow-hidden ${ 
               previewMode === 'mobile' ? 'rounded-[22px] bg-white' : 'rounded-lg bg-white'
             }`}
           >
@@ -718,12 +721,11 @@ function App() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto p-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[calc(100vh-140px)]">
-
-          {/* Left Side: Chat Interface */}
-          <div className="flex flex-col bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 overflow-hidden">
+      {/* Main Content - Lovable-style Layout */}
+      <div className="flex h-[calc(100vh-80px)]">
+        {/* Left Sidebar: Conversation (30% width, fixed) */}
+        <div className="w-[30%] min-w-[380px] max-w-[480px] flex flex-col border-r border-white/10 bg-black/20">
+          <div className="flex flex-col bg-white/5 backdrop-blur-sm overflow-hidden h-full">
             <div className="px-6 py-4 border-b border-white/10 bg-black/20">
               <h2 className="font-semibold text-lg flex items-center gap-2">
                 <span className="text-purple-400">💬</span>
@@ -763,56 +765,7 @@ function App() {
 
               {/* Chat Messages */}
               {messages.map((message, index) => (
-                <div
-                  key={index}
-                  className={`flex items-start gap-3 ${
-                    message.role === 'user' ? 'justify-end' : ''
-                  }`}
-                >
-                  {message.role === 'assistant' && (
-                    <div className="w-8 h-8 bg-gradient-to-br from-purple-400 to-pink-600 rounded-full flex items-center justify-center flex-shrink-0">
-                      🤖
-                    </div>
-                  )}
-                  <div
-                    className={`rounded-xl p-4 max-w-[80%] ${
-                      message.role === 'user'
-                        ? 'bg-gradient-to-r from-purple-500 to-pink-500'
-                        : 'bg-white/5 border border-white/10'
-                    }`}
-                  >
-                    <p className="text-sm">{message.content}</p>
-                    {message.image && (
-                      <div className="mt-3 rounded-lg overflow-hidden border border-white/20">
-                        <img
-                          src={message.image}
-                          alt="Generated"
-                          className="w-full h-auto"
-                        />
-                        <div className="p-2 bg-black/20 flex gap-2">
-                          <button
-                            onClick={() => navigator.clipboard.writeText(message.image)}
-                            className="text-xs px-2 py-1 bg-white/10 hover:bg-white/20 rounded transition-colors"
-                          >
-                            📋 Copy URL
-                          </button>
-                          <a
-                            href={message.image}
-                            download
-                            className="text-xs px-2 py-1 bg-white/10 hover:bg-white/20 rounded transition-colors"
-                          >
-                            💾 Download
-                          </a>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  {message.role === 'user' && (
-                    <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-cyan-600 rounded-full flex items-center justify-center flex-shrink-0">
-                      👤
-                    </div>
-                  )}
-                </div>
+                <ChatMessage key={index} role={message.role} content={message.content} image={message.image} />
               ))}
 
               {/* Loading indicator */}
@@ -839,76 +792,22 @@ function App() {
               {/* Progressive Results Display - REORDERED to match new pipeline */}
               {/* Stage 1: Campaign Brief */}
               {campaignBrief && (
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-purple-600 rounded-full flex items-center justify-center flex-shrink-0">
-                    📋
-                  </div>
-                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex-1">
-                    <h3 className="text-sm font-semibold text-blue-300 mb-2">📋 Stage 1: Campaign Strategy</h3>
-                    <pre className="text-xs text-gray-300 whitespace-pre-wrap font-mono max-h-60 overflow-y-auto">{campaignBrief}</pre>
-                  </div>
-                </div>
+                <ProgressStep icon="📋" title="Stage 1: Campaign Strategy" content={campaignBrief} contentType="code" />
               )}
 
               {/* Stage 2: Brand Colors */}
               {brandColors && (
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 bg-gradient-to-br from-pink-400 to-rose-600 rounded-full flex items-center justify-center flex-shrink-0">
-                    🎨
-                  </div>
-                  <div className="bg-pink-500/10 border border-pink-500/20 rounded-xl p-4 flex-1">
-                    <h3 className="text-sm font-semibold text-pink-300 mb-2">🎨 Stage 2: Brand Colors</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {brandColors.primaryColor && (
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded border border-white/20" style={{ backgroundColor: brandColors.primaryColor }}></div>
-                          <span className="text-xs text-gray-300">Primary: {brandColors.primaryColor}</span>
-                        </div>
-                      )}
-                      {brandColors.accentColor && (
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded border border-white/20" style={{ backgroundColor: brandColors.accentColor }}></div>
-                          <span className="text-xs text-gray-300">Accent: {brandColors.accentColor}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                 <ProgressStep icon="🎨" title="Stage 2: Brand Colors" content={brandColors} contentType="colors" />
               )}
 
               {/* Stage 3: Generated Images */}
               {emailImages.length > 0 && (
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 bg-gradient-to-br from-yellow-400 to-orange-600 rounded-full flex items-center justify-center flex-shrink-0">
-                    🖼️
-                  </div>
-                  <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 flex-1">
-                    <h3 className="text-sm font-semibold text-yellow-300 mb-3">🖼️ Stage 3: Generated Images (from brief)</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {emailImages.map((img, idx) => (
-                        <div key={idx} className="bg-black/20 rounded-lg overflow-hidden border border-white/10">
-                          <img src={img.url} alt={img.prompt} className="w-full h-32 object-cover" />
-                          <div className="p-2">
-                            <p className="text-xs text-gray-400 line-clamp-2">{img.prompt}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                <ProgressStep icon="🖼️" title="Stage 3: Generated Images" content={emailImages} contentType="images" />
               )}
 
               {/* Stage 4: Email Content */}
               {generatedContent && (
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 bg-gradient-to-br from-green-400 to-emerald-600 rounded-full flex items-center justify-center flex-shrink-0">
-                    ✍️
-                  </div>
-                  <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 flex-1">
-                    <h3 className="text-sm font-semibold text-green-300 mb-2">✍️ Stage 4: Email Content (using colors & images)</h3>
-                    <pre className="text-xs text-gray-300 whitespace-pre-wrap font-mono max-h-60 overflow-y-auto">{generatedContent}</pre>
-                  </div>
-                </div>
+                <ProgressStep icon="✍️" title="Stage 4: Email Content" content={generatedContent} contentType="code" />
               )}
             </div>
 
@@ -954,176 +853,176 @@ function App() {
               </div>
             </div>
           </div>
-
-          {/* Right Side: Preview & Code */}
-          <div className="flex flex-col bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 overflow-hidden">
-            <div className="px-6 py-4 border-b border-white/10 bg-black/20 flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <span className="text-purple-400 text-xl">✨</span>
-                <h2 className="font-semibold text-lg">
-                  Layout Preview &amp; HTML
-                </h2>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => setPreviewMode('desktop')}
-                  aria-pressed={previewMode === 'desktop'}
-                  className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
-                    previewMode === 'desktop'
-                      ? 'bg-gradient-to-r from-purple-500 to-pink-500 border-transparent shadow-lg shadow-purple-500/30'
-                      : 'bg-white/5 hover:bg-white/10 border-white/10'
-                  }`}
-                >
-                  💻 Desktop
-                </button>
-                <button
-                  onClick={() => setPreviewMode('mobile')}
-                  aria-pressed={previewMode === 'mobile'}
-                  className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
-                    previewMode === 'mobile'
-                      ? 'bg-gradient-to-r from-purple-500 to-pink-500 border-transparent shadow-lg shadow-purple-500/30'
-                      : 'bg-white/5 hover:bg-white/10 border-white/10'
-                  }`}
-                >
-                  📱 Mobile
-                </button>
-                <button
-                  onClick={() => setIsEditingPreview((prev) => !prev)}
-                  disabled={(!emailHtml && !isEditingPreview) || (showHtmlEditor && htmlEditorLayout === 'full')}
-                  aria-pressed={isEditingPreview}
-                  className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
-                    isEditingPreview
-                      ? 'bg-gradient-to-r from-emerald-500 to-teal-500 border-transparent shadow-lg shadow-emerald-500/30'
-                      : 'bg-white/5 hover:bg-white/10 border-white/10 disabled:opacity-50 disabled:cursor-not-allowed'
-                  }`}
-                >
-                  {isEditingPreview ? '✅ Done' : '✏️ Edit Preview'}
-                </button>
-                <button
-                  onClick={() =>
-                    setShowHtmlEditor((prev) => {
-                      const next = !prev;
-                      if (!next) {
-                        setHtmlEditorLayout('split');
-                      }
-                      return next;
-                    })
-                  }
-                  aria-pressed={showHtmlEditor}
-                  className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
-                    showHtmlEditor
-                      ? 'bg-gradient-to-r from-blue-500 to-purple-500 border-transparent shadow-lg shadow-blue-500/20'
-                      : 'bg-white/5 hover:bg-white/10 border-white/10'
-                  }`}
-                >
-                  {showHtmlEditor ? '🧾 Hide HTML' : '🧾 HTML Editor'}
-                </button>
-                {showHtmlEditor && (
-                  <div className="flex border border-white/10 rounded-lg overflow-hidden">
-                    <button
-                      onClick={() => setHtmlEditorLayout('split')}
-                      aria-pressed={htmlEditorLayout === 'split'}
-                      className={`text-xs px-3 py-1 transition-colors ${
-                        htmlEditorLayout === 'split'
-                          ? 'bg-white/10'
-                          : 'bg-white/5 hover:bg-white/10'
-                      }`}
-                    >
-                      ⫽ Split
-                    </button>
-                    <button
-                      onClick={() => {
-                        setHtmlEditorLayout('full');
-                        setIsEditingPreview(false);
-                      }}
-                      aria-pressed={htmlEditorLayout === 'full'}
-                      className={`text-xs px-3 py-1 border-l border-white/10 transition-colors ${
-                        htmlEditorLayout === 'full'
-                          ? 'bg-white/10'
-                          : 'bg-white/5 hover:bg-white/10'
-                      }`}
-                    >
-                      ⛶ Full Screen
-                    </button>
+                </div>
+                {/* Right Side: Preview & Code (Takes remaining space - 70%) */}
+                <div className="flex-1 flex flex-col bg-gradient-to-br from-gray-900 to-black overflow-hidden">
+                    <div className="px-6 py-4 border-b border-white/10 bg-black/20 flex flex-wrap items-center justify-between gap-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-purple-400 text-xl">✨</span>
+                        <h2 className="font-semibold text-lg">
+                          Layout Preview &amp; HTML
+                        </h2>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => setPreviewMode('desktop')}
+                          aria-pressed={previewMode === 'desktop'}
+                          className={`text-xs px-3 py-1 rounded-lg border transition-colors ${ 
+                            previewMode === 'desktop'
+                              ? 'bg-gradient-to-r from-purple-500 to-pink-500 border-transparent shadow-lg shadow-purple-500/30'
+                              : 'bg-white/5 hover:bg-white/10 border-white/10'
+                          }`}
+                        >
+                          💻 Desktop
+                        </button>
+                        <button
+                          onClick={() => setPreviewMode('mobile')}
+                          aria-pressed={previewMode === 'mobile'}
+                          className={`text-xs px-3 py-1 rounded-lg border transition-colors ${ 
+                            previewMode === 'mobile'
+                              ? 'bg-gradient-to-r from-purple-500 to-pink-500 border-transparent shadow-lg shadow-purple-500/30'
+                              : 'bg-white/5 hover:bg-white/10 border-white/10'
+                          }`}
+                        >
+                          📱 Mobile
+                        </button>
+                        <button
+                          onClick={() => setIsEditingPreview((prev) => !prev)}
+                          disabled={(!emailHtml && !isEditingPreview) || (showHtmlEditor && htmlEditorLayout === 'full')}
+                          aria-pressed={isEditingPreview}
+                          className={`text-xs px-3 py-1 rounded-lg border transition-colors ${ 
+                            isEditingPreview
+                              ? 'bg-gradient-to-r from-emerald-500 to-teal-500 border-transparent shadow-lg shadow-emerald-500/30'
+                              : 'bg-white/5 hover:bg-white/10 border-white/10 disabled:opacity-50 disabled:cursor-not-allowed'
+                          }`}
+                        >
+                          {isEditingPreview ? '✅ Done' : '✏️ Edit Preview'}
+                        </button>
+                        <button
+                          onClick={() =>
+                            setShowHtmlEditor((prev) => {
+                              const next = !prev;
+                              if (!next) {
+                                setHtmlEditorLayout('split');
+                              }
+                              return next;
+                            })
+                          }
+                          aria-pressed={showHtmlEditor}
+                          className={`text-xs px-3 py-1 rounded-lg border transition-colors ${ 
+                            showHtmlEditor
+                              ? 'bg-gradient-to-r from-blue-500 to-purple-500 border-transparent shadow-lg shadow-blue-500/20'
+                              : 'bg-white/5 hover:bg-white/10 border-white/10'
+                          }`}
+                        >
+                          {showHtmlEditor ? '🧾 Hide HTML' : '🧾 HTML Editor'}
+                        </button>
+                        {showHtmlEditor && (
+                          <div className="flex border border-white/10 rounded-lg overflow-hidden">
+                            <button
+                              onClick={() => setHtmlEditorLayout('split')}
+                              aria-pressed={htmlEditorLayout === 'split'}
+                              className={`text-xs px-3 py-1 transition-colors ${ 
+                                htmlEditorLayout === 'split'
+                                  ? 'bg-white/10'
+                                  : 'bg-white/5 hover:bg-white/10'
+                              }`}
+                            >
+                              ⫽ Split
+                            </button>
+                            <button
+                              onClick={() => {
+                                setHtmlEditorLayout('full');
+                                setIsEditingPreview(false);
+                              }}
+                              aria-pressed={htmlEditorLayout === 'full'}
+                              className={`text-xs px-3 py-1 border-l border-white/10 transition-colors ${ 
+                                htmlEditorLayout === 'full'
+                                  ? 'bg-white/10'
+                                  : 'bg-white/5 hover:bg-white/10'
+                              }`}
+                            >
+                              ⛶ Full Screen
+                            </button>
+                          </div>
+                        )}
+                        {emailHtml && (
+                          <>
+                            <button
+                              onClick={() => setShowMappHelper(!showMappHelper)}
+                              className={`text-xs px-3 py-1 rounded-lg border transition-colors ${ 
+                                showMappHelper
+                                  ? 'bg-purple-500 border-purple-400'
+                                  : 'bg-white/5 hover:bg-white/10 border-white/10'
+                              }`}
+                            >
+                              📝 Mapp Helper
+                            </button>
+                            <button
+                              onClick={() => setShowSaveModal(true)}
+                              className="text-xs px-3 py-1 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg font-medium transition-colors"
+                            >
+                              💾 Save
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+        
+                    <div className="flex-1 overflow-auto p-6 bg-gradient-to-br from-slate-800/50 to-slate-900/50">
+                      {showHtmlEditor ? (
+                        htmlEditorLayout === 'split' ? (
+                          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 h-full">
+                            <div className="flex flex-col h-full xl:order-1">{previewPane}</div>
+                            <div className="flex flex-col h-full xl:order-2">{htmlEditorPane}</div>
+                          </div>
+                        ) : (
+                          <div className="h-full flex flex-col">{htmlEditorPane}</div>
+                        )
+                      ) : (
+                        <div className="h-full flex flex-col">{previewPane}</div>
+                      )}
+                    </div>
                   </div>
-                )}
-                {emailHtml && (
-                  <>
-                    <button
-                      onClick={() => setShowMappHelper(!showMappHelper)}
-                      className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
-                        showMappHelper
-                          ? 'bg-purple-500 border-purple-400'
-                          : 'bg-white/5 hover:bg-white/10 border-white/10'
-                      }`}
-                    >
-                      📝 Mapp Helper
-                    </button>
-                    <button
-                      onClick={() => setShowSaveModal(true)}
-                      className="text-xs px-3 py-1 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg font-medium transition-colors"
-                    >
-                      💾 Save
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-auto p-6 bg-gradient-to-br from-slate-800/50 to-slate-900/50">
-              {showHtmlEditor ? (
-                htmlEditorLayout === 'split' ? (
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 h-full">
-                    <div className="flex flex-col h-full xl:order-1">{previewPane}</div>
-                    <div className="flex flex-col h-full xl:order-2">{htmlEditorPane}</div>
+        
+                </div>
+              
+        
+              {/* Save Template Modal */}
+              {showNewEmailModal && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+                  <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-white/10 rounded-2xl p-6 max-w-lg w-full mx-4 space-y-4">
+                    <div>
+                      <h3 className="text-xl font-bold mb-2">Start a New Email?</h3>
+                      <p className="text-sm text-gray-300 leading-relaxed">
+                        You are about to delete the current content and start a new email. Do you want to proceed?
+                      </p>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <button
+                        onClick={handleStartNewEmail}
+                        className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 rounded-lg font-medium transition-all text-sm"
+                      >
+                        Yes
+                      </button>
+                      <button
+                        onClick={handleStartNewEmailWithSave}
+                        className="px-4 py-2 bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 rounded-lg font-medium transition-all text-sm"
+                      >
+                        Yes &amp; Save Template
+                      </button>
+                      <button
+                        onClick={() => setShowNewEmailModal(false)}
+                        className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-all text-sm"
+                      >
+                        No
+                      </button>
+                    </div>
                   </div>
-                ) : (
-                  <div className="h-full flex flex-col">{htmlEditorPane}</div>
-                )
-              ) : (
-                <div className="h-full flex flex-col">{previewPane}</div>
+                </div>
               )}
-            </div>
-          </div>
 
-        </div>
-      </div>
-
-      {/* Save Template Modal */}
-      {showNewEmailModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-white/10 rounded-2xl p-6 max-w-lg w-full mx-4 space-y-4">
-            <div>
-              <h3 className="text-xl font-bold mb-2">Start a New Email?</h3>
-              <p className="text-sm text-gray-300 leading-relaxed">
-                You are about to delete the current content and start a new email. Do you want to proceed?
-              </p>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-3">
-              <button
-                onClick={handleStartNewEmail}
-                className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 rounded-lg font-medium transition-all text-sm"
-              >
-                Yes
-              </button>
-              <button
-                onClick={handleStartNewEmailWithSave}
-                className="px-4 py-2 bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 rounded-lg font-medium transition-all text-sm"
-              >
-                Yes &amp; Save Template
-              </button>
-              <button
-                onClick={() => setShowNewEmailModal(false)}
-                className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-all text-sm"
-              >
-                No
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showSaveModal && (
+              {showSaveModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-white/10 rounded-2xl p-6 max-w-md w-full mx-4">
             <h3 className="text-xl font-bold mb-4">Save Email Template</h3>
@@ -1303,11 +1202,9 @@ function App() {
               <div>
                 <h4 className="font-semibold text-purple-400 mb-3">Conditional Content</h4>
                 <div className="bg-white/5 border border-white/10 rounded p-3 font-mono text-xs">
-                  <pre className="text-pink-400 whitespace-pre-wrap">{`<%If expression="\${user['FirstName'] != null}"%>
-  Hello <%\${user['FirstName']}%>!
-<%Else%>
-  Hello valued customer!
-<%/If%>`}</pre>
+                  <pre className="text-pink-400 whitespace-pre-wrap">
+                    {String.raw`<%If expression="\${user['FirstName'] != null}"%>\n  Hello <%\${user['FirstName']}%>!\n<%Else%>\n  Hello valued customer!\n<%/If%>`}
+                  </pre>
                 </div>
               </div>
 
@@ -1315,12 +1212,9 @@ function App() {
               <div>
                 <h4 className="font-semibold text-purple-400 mb-3">Product Recommendations</h4>
                 <div className="bg-white/5 border border-white/10 rounded p-3 font-mono text-xs">
-                  <pre className="text-orange-400 whitespace-pre-wrap">{`<%ForEach var="product" items="\${ecx:recommendedProducts('PRECALC', user.pk, '3', 500)}"%>
-  <div>
-    <h3><%\${product.productName}%></h3>
-    <p>$<%\${product.productPrice}%></p>
-  </div>
-<%/ForEach%>`}</pre>
+                  <pre className="text-orange-400 whitespace-pre-wrap">
+                    {String.raw`<%ForEach var="product" items="\${ecx:recommendedProducts('PRECALC', user.pk, '3', 500)}"%>\n  <div>\n    <h3><%\${product.productName}%></h3>\n    <p>$<%\${product.productPrice}%></p>\n  </div>\n<%/ForEach%>`}
+                  </pre>
                 </div>
               </div>
 
@@ -1329,13 +1223,13 @@ function App() {
                 <h4 className="font-semibold text-purple-400 mb-3">Common Functions</h4>
                 <div className="space-y-2 font-mono text-xs">
                   <div className="bg-white/5 border border-white/10 rounded p-2">
-                    <code className="text-cyan-400">&lt;%${`{ecx:capitalizeFirstLetter(user['FirstName'])}`}%&gt;</code>
+                    <code className="text-cyan-400">&lt;%${"{ecx:capitalizeFirstLetter(user['FirstName'])}"}%&gt;</code>
                   </div>
                   <div className="bg-white/5 border border-white/10 rounded p-2">
-                    <code className="text-cyan-400">&lt;%${`{ecx:formatDate(date, 'MMMM d, yyyy')}`}%&gt;</code>
+                    <code className="text-cyan-400">&lt;%${"{ecx:formatDate(date, 'MMMM d, yyyy')}"}%&gt;</code>
                   </div>
                   <div className="bg-white/5 border border-white/10 rounded p-2">
-                    <code className="text-cyan-400">&lt;%${`{ecx:formatNumber(price, 2, '.', ',')}`}%&gt;</code>
+                    <code className="text-cyan-400">&lt;%${"{ecx:formatNumber(price, 2, '.', ',')}"}%&gt;</code>
                   </div>
                 </div>
               </div>
@@ -1355,7 +1249,7 @@ function App() {
             setClarifyingQuestions([]);
             const cancelMessage = {
               role: 'assistant',
-              content: 'No problem! Feel free to provide a more detailed request when you\'re ready.'
+              content: "No problem! Feel free to provide a more detailed request when you're ready."
             };
             setMessages(prev => [...prev, cancelMessage]);
           }}
@@ -1364,5 +1258,105 @@ function App() {
     </div>
   );
 }
+
+const ChatMessage = ({ role, content, image }) => (
+  <div className={`flex items-start gap-3 ${role === 'user' ? 'justify-end' : ''}`}>
+    {role === 'assistant' && (
+      <div className="w-8 h-8 bg-gradient-to-br from-purple-400 to-pink-600 rounded-full flex items-center justify-center flex-shrink-0">
+        🤖
+      </div>
+    )}
+    <div
+      className={`rounded-xl p-4 max-w-[80%] ${ 
+        role === 'user'
+          ? 'bg-gradient-to-r from-purple-500 to-pink-500'
+          : 'bg-white/5 border border-white/10'
+      }`}
+    >
+      <p className="text-sm">{content}</p>
+      {image && (
+        <div className="mt-3 rounded-lg overflow-hidden border border-white/20">
+          <img src={image} alt="Generated" className="w-full h-auto" />
+          <div className="p-2 bg-black/20 flex gap-2">
+            <button
+              onClick={() => navigator.clipboard.writeText(image)}
+              className="text-xs px-2 py-1 bg-white/10 hover:bg-white/20 rounded transition-colors"
+            >
+              📋 Copy URL
+            </button>
+            <a
+              href={image}
+              download
+              className="text-xs px-2 py-1 bg-white/10 hover:bg-white/20 rounded transition-colors"
+            >
+              💾 Download
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+    {role === 'user' && (
+      <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-cyan-600 rounded-full flex items-center justify-center flex-shrink-0">
+        👤
+      </div>
+    )}
+  </div>
+);
+
+const ProgressStep = ({ icon, title, content, contentType }) => {
+  let contentRender;
+
+  switch (contentType) {
+    case 'code':
+      contentRender = <pre className="text-xs text-gray-300 whitespace-pre-wrap font-mono max-h-60 overflow-y-auto">{content}</pre>;
+      break;
+    case 'colors':
+      contentRender = (
+        <div className="flex flex-wrap gap-2">
+          {content.primaryColor && (
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded border border-white/20" style={{ backgroundColor: content.primaryColor }}></div>
+              <span className="text-xs text-gray-300">Primary: {content.primaryColor}</span>
+            </div>
+          )}
+          {content.accentColor && (
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded border border-white/20" style={{ backgroundColor: content.accentColor }}></div>
+              <span className="text-xs text-gray-300">Accent: {content.accentColor}</span>
+            </div>
+          )}
+        </div>
+      );
+      break;
+    case 'images':
+      contentRender = (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {content.map((img, idx) => (
+            <div key={idx} className="bg-black/20 rounded-lg overflow-hidden border border-white/10">
+              <img src={img.url} alt={img.prompt} className="w-full h-32 object-cover" />
+              <div className="p-2">
+                <p className="text-xs text-gray-400 line-clamp-2">{img.prompt}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+      break;
+    default:
+      contentRender = <p className="text-sm text-gray-300">{content}</p>;
+  }
+
+  return (
+    <div className="flex items-start gap-3">
+      <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-purple-600 rounded-full flex items-center justify-center flex-shrink-0">
+        {icon}
+      </div>
+      <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex-1">
+        <h3 className="text-sm font-semibold text-blue-300 mb-2">{title}</h3>
+        {contentRender}
+      </div>
+    </div>
+  );
+};
 
 export default App;

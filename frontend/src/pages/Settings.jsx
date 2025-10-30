@@ -173,15 +173,23 @@ const ChatPanel = ({ messages, isScanning, websiteUrl, setWebsiteUrl, handleScan
   </div>
 );
 
-const ChatMessage = ({ role, content }) => (
-  <div className={`flex items-start gap-3 ${role === 'user' ? 'justify-end' : ''}`}>
-    {role === 'assistant' && <div className="w-8 h-8 bg-gradient-to-br from-purple-400 to-pink-600 rounded-full flex items-center justify-center flex-shrink-0">🤖</div>}
-    <div className={`rounded-xl p-4 max-w-[85%] ${role === 'user' ? 'bg-gradient-to-r from-purple-500 to-pink-500' : 'bg-white/5 border border-white/10'}`}>
-      <p className="text-sm whitespace-pre-line">{content}</p>
+const ChatMessage = ({ role, content }) => {
+  const isImageUrl = typeof content === 'string' && content.startsWith('data:image');
+
+  return (
+    <div className={`flex items-start gap-3 ${role === 'user' ? 'justify-end' : ''}`}>
+      {role === 'assistant' && <div className="w-8 h-8 bg-gradient-to-br from-purple-400 to-pink-600 rounded-full flex items-center justify-center flex-shrink-0">🤖</div>}
+      <div className={`rounded-xl p-4 max-w-[85%] ${role === 'user' ? 'bg-gradient-to-r from-purple-500 to-pink-500' : 'bg-white/5 border border-white/10'}`}>
+        {isImageUrl ? (
+          <img src={content} alt="Generated Image" className="max-w-full h-auto rounded-lg" />
+        ) : (
+          <p className="text-sm whitespace-pre-line">{content}</p>
+        )}
+      </div>
+      {role === 'user' && <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-cyan-600 rounded-full flex items-center justify-center flex-shrink-0">👤</div>}
     </div>
-    {role === 'user' && <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-cyan-600 rounded-full flex items-center justify-center flex-shrink-0">👤</div>}
-  </div>
-);
+  );
+};
 
 const LoadingIndicator = () => (
   <div className="flex items-start gap-3">
@@ -196,7 +204,12 @@ const LoadingIndicator = () => (
   </div>
 );
 
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
 const SettingsForm = ({ settings, setSettings, saveSettings }) => {
+  const [isEditing, setIsEditing] = useState(true);
+
   const handleWebsiteUrlChange = (value) => {
     setSettings(prev => ({
       ...prev,
@@ -208,7 +221,14 @@ const SettingsForm = ({ settings, setSettings, saveSettings }) => {
     <div className="bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 overflow-hidden h-[calc(100vh-140px)] flex flex-col">
       <div className="px-6 py-4 border-b border-white/10 bg-black/20 flex items-center justify-between">
         <h2 className="font-semibold text-lg flex items-center gap-2"><span className="text-purple-400">⚙️</span> Brand Profile (Markdown)</h2>
-        {settings && <button onClick={saveSettings} className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg text-sm font-medium transition-all">💾 Save Changes</button>}
+        <div className="flex items-center gap-4">
+          {settings && (
+            <button onClick={() => setIsEditing(!isEditing)} className="px-4 py-2 bg-black/20 border border-white/10 hover:bg-white/10 rounded-lg text-sm font-medium transition-all">
+              {isEditing ? '👁️ Preview' : '✏️ Edit'}
+            </button>
+          )}
+          {settings && <button onClick={saveSettings} className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg text-sm font-medium transition-all">💾 Save Changes</button>}
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {!settings ? (
@@ -219,12 +239,22 @@ const SettingsForm = ({ settings, setSettings, saveSettings }) => {
         ) : (
           <>
             <InputField label="Website URL" value={settings.website_url} onChange={handleWebsiteUrlChange} />
-            <TextAreaField
-              label="Full Scan Data (Markdown)"
-              value={settings.full_scan_markdown || ''}
-              onChange={(value) => setSettings(prev => ({ ...prev, full_scan_markdown: value }))}
-              rows={25}
-            />
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Full Scan Data (Markdown)</label>
+              {isEditing ? (
+                <TextAreaField
+                  value={settings.full_scan_markdown || ''}
+                  onChange={(value) => setSettings(prev => ({ ...prev, full_scan_markdown: value }))}
+                  rows={25}
+                />
+              ) : (
+                <div className="prose prose-invert bg-white/5 border border-white/10 rounded-lg p-4 max-w-none">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {settings.full_scan_markdown || ''}
+                  </ReactMarkdown>
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>
