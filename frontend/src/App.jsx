@@ -15,6 +15,8 @@ function App() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [templateDescription, setTemplateDescription] = useState('');
+  const [showNewEmailModal, setShowNewEmailModal] = useState(false);
+  const [previewResetKey, setPreviewResetKey] = useState(0);
   const [showMappHelper, setShowMappHelper] = useState(false);
   const [generatedImages, setGeneratedImages] = useState([]);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
@@ -96,6 +98,108 @@ function App() {
     : previewHtmlValue && previewHtmlValue.trim()
       ? previewHtmlValue
       : null;
+
+  const resetWorkspace = () => {
+    setMessages([]);
+    setInputValue('');
+    updateEmailHtml('');
+    setEmailContent(null);
+    setCurrentPrompt('');
+    setGeneratedImages([]);
+    setEmailImages([]);
+    setShowMappHelper(false);
+    setShowTemplates(false);
+    setShowSaveModal(false);
+    setShowNewEmailModal(false);
+    setIsGenerating(false);
+    setGenerationStage('');
+    setIsGeneratingImage(false);
+    setShowClarificationDialog(false);
+    setClarifyingQuestions([]);
+    setPendingBrief(null);
+    setIsEditingPreview(false);
+    setTemplateName('');
+    setTemplateDescription('');
+    setShowHtmlEditor(false);
+    setHtmlEditorLayout('split');
+    setPreviewMode('desktop');
+    setPreviewResetKey((prev) => prev + 1);
+  };
+
+  const saveTemplate = async (name, description = '') => {
+    if (!name || !name.trim()) {
+      throw new Error('Template name is required');
+    }
+
+    if (!emailHtml || !emailHtml.trim()) {
+      throw new Error('No HTML content available to save.');
+    }
+
+    const response = await fetch('http://localhost:3000/api/templates', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: name.trim(),
+        description: description.trim(),
+        subject: emailContent?.subject || '',
+        preheader: emailContent?.preheader || '',
+        html: emailHtml,
+        userPrompt: currentPrompt,
+        lookAndFeel: {
+          brandColor: '#6366f1',
+          accentColor: '#ec4899',
+        }
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to save template');
+    }
+
+    await loadTemplates();
+  };
+
+  const handleStartNewEmail = () => {
+    resetWorkspace();
+    setShowNewEmailModal(false);
+  };
+
+  const handleStartNewEmailWithSave = async () => {
+    if (!emailHtml || !emailHtml.trim()) {
+      alert('No email has been generated yet. Starting a new email instead.');
+      handleStartNewEmail();
+      return;
+    }
+
+    const defaultName = templateName || `New Email ${new Date().toLocaleDateString()}`;
+    const name = window.prompt('Enter a name for the template before starting a new email:', defaultName);
+
+    if (!name) {
+      return;
+    }
+
+    let description = templateDescription;
+    if (!description) {
+      const descriptionInput = window.prompt('Optional: add a description for this template (leave blank to skip):', '');
+      if (descriptionInput === null) {
+        description = '';
+      } else {
+        description = descriptionInput;
+      }
+    }
+
+    try {
+      await saveTemplate(name, description);
+      alert('Template saved successfully!');
+      handleStartNewEmail();
+    } catch (error) {
+      alert(`Failed to save template: ${error.message}`);
+    }
+  };
 
   // Load templates on mount
   useEffect(() => {
@@ -202,42 +306,12 @@ function App() {
   };
 
   const handleSaveTemplate = async () => {
-    if (!templateName.trim() || !emailHtml) {
-      alert('Please provide a template name');
-      return;
-    }
-
     try {
-      const response = await fetch('http://localhost:3000/api/templates', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: templateName,
-          description: templateDescription,
-          subject: emailContent?.subject || '',
-          preheader: emailContent?.preheader || '',
-          html: emailHtml,
-          userPrompt: currentPrompt,
-          lookAndFeel: {
-            brandColor: '#6366f1',
-            accentColor: '#ec4899',
-          }
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        alert('Template saved successfully!');
-        setShowSaveModal(false);
-        setTemplateName('');
-        setTemplateDescription('');
-        loadTemplates();
-      } else {
-        alert(`Error: ${data.error}`);
-      }
+      await saveTemplate(templateName, templateDescription);
+      alert('Template saved successfully!');
+      setShowSaveModal(false);
+      setTemplateName('');
+      setTemplateDescription('');
     } catch (error) {
       alert(`Failed to save template: ${error.message}`);
     }
@@ -462,6 +536,7 @@ function App() {
             }`}
           >
             <InteractiveEmailPreview
+              key={previewResetKey}
               html={previewHtmlForComponent}
               onRegenerateImage={handleRegenerateImage}
               isGeneratingImage={isGeneratingImage}
@@ -515,6 +590,12 @@ function App() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <button
+              onClick={() => setShowNewEmailModal(true)}
+              className="text-sm text-gray-300 hover:text-white transition-colors"
+            >
+              ✨ New Email
+            </button>
             <button
               onClick={() => setShowTemplates(!showTemplates)}
               className="text-sm text-gray-300 hover:text-white transition-colors"
@@ -825,6 +906,39 @@ function App() {
       </div>
 
       {/* Save Template Modal */}
+      {showNewEmailModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-white/10 rounded-2xl p-6 max-w-lg w-full mx-4 space-y-4">
+            <div>
+              <h3 className="text-xl font-bold mb-2">Start a New Email?</h3>
+              <p className="text-sm text-gray-300 leading-relaxed">
+                You are about to delete the current content and start a new email. Do you want to proceed?
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <button
+                onClick={handleStartNewEmail}
+                className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 rounded-lg font-medium transition-all text-sm"
+              >
+                Yes
+              </button>
+              <button
+                onClick={handleStartNewEmailWithSave}
+                className="px-4 py-2 bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 rounded-lg font-medium transition-all text-sm"
+              >
+                Yes &amp; Save Template
+              </button>
+              <button
+                onClick={() => setShowNewEmailModal(false)}
+                className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-all text-sm"
+              >
+                No
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showSaveModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-white/10 rounded-2xl p-6 max-w-md w-full mx-4">
