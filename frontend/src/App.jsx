@@ -25,6 +25,7 @@ function App() {
   const [pendingBrief, setPendingBrief] = useState(null);
   const [generationStage, setGenerationStage] = useState(''); // Progress indicator
   const [previewMode, setPreviewMode] = useState('desktop');
+  const [isEditingPreview, setIsEditingPreview] = useState(false);
 
   // Load templates on mount
   useEffect(() => {
@@ -611,6 +612,18 @@ function App() {
                     >
                       📱 Mobile
                     </button>
+                    <button
+                      onClick={() => setIsEditingPreview((prev) => !prev)}
+                      disabled={!emailHtml && !isEditingPreview}
+                      aria-pressed={isEditingPreview}
+                      className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
+                        isEditingPreview
+                          ? 'bg-gradient-to-r from-emerald-500 to-teal-500 border-transparent shadow-lg shadow-emerald-500/30'
+                          : 'bg-white/5 hover:bg-white/10 border-white/10 disabled:opacity-50 disabled:cursor-not-allowed'
+                      }`}
+                    >
+                      {isEditingPreview ? '✅ Done' : '✏️ Edit'}
+                    </button>
                   </>
                 )}
                 <div className="flex border border-white/10 rounded-lg overflow-hidden">
@@ -623,7 +636,10 @@ function App() {
                     👁 Preview
                   </button>
                   <button
-                    onClick={() => setViewMode('code')}
+                    onClick={() => {
+                      setViewMode('code');
+                      setIsEditingPreview(false);
+                    }}
                     className={`text-xs px-3 py-1 border-l border-white/10 transition-colors ${
                       viewMode === 'code' ? 'bg-white/10' : 'bg-white/5 hover:bg-white/10'
                     }`}
@@ -636,37 +652,38 @@ function App() {
 
             <div className="flex-1 overflow-auto p-6 bg-gradient-to-br from-slate-800/50 to-slate-900/50">
               {viewMode === 'code' ? (
-                emailHtml ? (
-                  <div className="bg-slate-900 rounded-lg border border-white/10 overflow-hidden h-full">
-                    <div className="px-4 py-2 bg-black/40 border-b border-white/10 flex items-center justify-between">
-                      <span className="text-xs text-gray-400 font-mono">HTML + Mapp Template</span>
+                <div className="bg-slate-900 rounded-lg border border-white/10 overflow-hidden h-full flex flex-col">
+                  <div className="px-4 py-2 bg-black/40 border-b border-white/10 flex items-center justify-between">
+                    <span className="text-xs text-gray-400 font-mono">HTML + Mapp Template</span>
+                    <div className="flex items-center gap-2">
                       <button
-                        onClick={() => navigator.clipboard.writeText(emailHtml)}
-                        className="text-xs px-2 py-1 bg-white/5 hover:bg-white/10 rounded transition-colors"
+                        onClick={() => navigator.clipboard.writeText(emailHtml ?? '')}
+                        disabled={!emailHtml}
+                        className="text-xs px-2 py-1 bg-white/5 hover:bg-white/10 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         📋 Copy
                       </button>
                     </div>
-                    <pre className="p-4 text-xs text-gray-300 font-mono overflow-auto h-[calc(100%-40px)]">
-                      <code>{emailHtml}</code>
-                    </pre>
                   </div>
-                ) : (
-                  <div className="bg-slate-900/60 border border-white/5 rounded-lg h-full flex items-center justify-center">
-                    <p className="text-sm text-gray-400">Generate an email to view the template code.</p>
-                  </div>
-                )
+                  <textarea
+                    value={emailHtml ?? ''}
+                    onChange={(e) => setEmailHtml(e.target.value)}
+                    placeholder="Dein HTML erscheint hier. Du kannst es direkt bearbeiten oder neues HTML einfügen."
+                    className="flex-1 w-full bg-black/50 text-gray-100 font-mono text-xs leading-5 p-4 border-none outline-none resize-none"
+                    spellCheck={false}
+                  />
+                </div>
               ) : (
                 <div
                   className={`transition-all duration-300 ${
                     previewMode === 'mobile' ? 'flex justify-center py-6' : 'mx-auto'
                   }`}
                 >
-                  <div
-                    className={`transition-all duration-300 ${
-                      previewMode === 'mobile'
-                        ? 'w-[380px] max-w-full'
-                        : 'max-w-2xl w-full'
+                <div
+                  className={`transition-all duration-300 ${
+                    previewMode === 'mobile'
+                      ? 'w-[380px] max-w-full'
+                      : 'max-w-2xl w-full'
                     }`}
                   >
                     <div
@@ -684,9 +701,11 @@ function App() {
                         }`}
                       >
                         <InteractiveEmailPreview
-                          html={emailHtml || null}
+                          html={isEditingPreview ? emailHtml : emailHtml || null}
                           onRegenerateImage={handleRegenerateImage}
                           isGeneratingImage={isGeneratingImage}
+                          isEditable={isEditingPreview}
+                          onHtmlChange={setEmailHtml}
                         />
                       </div>
                     </div>

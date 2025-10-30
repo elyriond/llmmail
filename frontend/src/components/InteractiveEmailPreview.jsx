@@ -1,26 +1,45 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
-function InteractiveEmailPreview({ html, onRegenerateImage, isGeneratingImage }) {
+function InteractiveEmailPreview({
+  html,
+  onRegenerateImage,
+  isGeneratingImage,
+  isEditable = false,
+  onHtmlChange,
+}) {
   const previewRef = useRef(null);
-  const [hoveredImageUrl, setHoveredImageUrl] = useState(null);
 
   useEffect(() => {
-    if (!previewRef.current || !html) return;
+    const container = previewRef.current;
+    if (!container) return;
 
-    // Render HTML in the preview
-    previewRef.current.innerHTML = html;
+    // Keep edits intact while typing by avoiding unnecessary resets.
+    const nextHtml = html ?? '';
+    if (isEditable) {
+      container.setAttribute('contenteditable', 'true');
+      if (container.innerHTML !== nextHtml) {
+        container.innerHTML = nextHtml;
+      }
+      return;
+    }
 
-    // Find all images and add hover overlays
-    const images = previewRef.current.querySelectorAll('img');
+    container.setAttribute('contenteditable', 'false');
+
+    if (!html) {
+      container.innerHTML = '';
+      return;
+    }
+
+    container.innerHTML = nextHtml;
+
+    const images = container.querySelectorAll('img');
 
     images.forEach((img) => {
-      // Create wrapper for image + overlay
       const wrapper = document.createElement('div');
       wrapper.style.position = 'relative';
       wrapper.style.display = 'inline-block';
       wrapper.style.width = img.style.width || '100%';
 
-      // Create overlay
       const overlay = document.createElement('div');
       overlay.className = 'image-overlay';
       overlay.style.position = 'absolute';
@@ -35,9 +54,8 @@ function InteractiveEmailPreview({ html, onRegenerateImage, isGeneratingImage })
       overlay.style.cursor = 'pointer';
       overlay.style.zIndex = '10';
 
-      // Create button
       const button = document.createElement('button');
-      button.textContent = '🤖 AI Regenerate';
+      button.textContent = isGeneratingImage ? '⏳ Regenerating...' : '🤖 AI Regenerate';
       button.style.padding = '8px 16px';
       button.style.backgroundColor = '#8b5cf6';
       button.style.color = 'white';
@@ -45,33 +63,36 @@ function InteractiveEmailPreview({ html, onRegenerateImage, isGeneratingImage })
       button.style.borderRadius = '8px';
       button.style.fontSize = '14px';
       button.style.fontWeight = '600';
-      button.style.cursor = 'pointer';
+      button.style.cursor = isGeneratingImage ? 'progress' : 'pointer';
       button.style.transition = 'all 0.2s';
+      button.disabled = !!isGeneratingImage;
 
-      button.onmouseenter = () => {
-        button.style.backgroundColor = '#7c3aed';
-        button.style.transform = 'scale(1.05)';
-      };
+      if (!isGeneratingImage) {
+        button.onmouseenter = () => {
+          button.style.backgroundColor = '#7c3aed';
+          button.style.transform = 'scale(1.05)';
+        };
 
-      button.onmouseleave = () => {
-        button.style.backgroundColor = '#8b5cf6';
-        button.style.transform = 'scale(1)';
-      };
+        button.onmouseleave = () => {
+          button.style.backgroundColor = '#8b5cf6';
+          button.style.transform = 'scale(1)';
+        };
+      }
 
       button.onclick = (e) => {
         e.stopPropagation();
+        if (!onRegenerateImage || isGeneratingImage) return;
         const imageUrl = img.src;
         onRegenerateImage(imageUrl);
       };
 
       overlay.appendChild(button);
 
-      // Wrap image
-      img.parentNode.insertBefore(wrapper, img);
+      const parent = img.parentNode;
+      parent.insertBefore(wrapper, img);
       wrapper.appendChild(img);
       wrapper.appendChild(overlay);
 
-      // Show overlay on hover
       wrapper.onmouseenter = () => {
         overlay.style.display = 'flex';
       };
@@ -80,9 +101,30 @@ function InteractiveEmailPreview({ html, onRegenerateImage, isGeneratingImage })
         overlay.style.display = 'none';
       };
     });
-  }, [html, onRegenerateImage]);
+  }, [html, isEditable, isGeneratingImage, onRegenerateImage]);
 
-  if (!html) {
+  useEffect(() => {
+    const container = previewRef.current;
+    if (!container || !isEditable || typeof onHtmlChange !== 'function') return;
+
+    const handleInput = () => {
+      onHtmlChange(container.innerHTML);
+    };
+
+    const handleBlur = () => {
+      onHtmlChange(container.innerHTML);
+    };
+
+    container.addEventListener('input', handleInput);
+    container.addEventListener('blur', handleBlur);
+
+    return () => {
+      container.removeEventListener('input', handleInput);
+      container.removeEventListener('blur', handleBlur);
+    };
+  }, [isEditable, onHtmlChange]);
+
+  if (!html && !isEditable) {
     return (
       <div className="p-8 text-center text-gray-400">
         <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-purple-100 to-pink-100 rounded-full flex items-center justify-center text-4xl">
@@ -99,7 +141,10 @@ function InteractiveEmailPreview({ html, onRegenerateImage, isGeneratingImage })
   return (
     <div
       ref={previewRef}
-      className="email-preview-content"
+      className={`email-preview-content ${isEditable ? 'outline outline-2 outline-emerald-500/70 shadow-lg shadow-emerald-500/20' : ''}`}
+      data-editing={isEditable ? 'true' : 'false'}
+      suppressContentEditableWarning
+      spellCheck={false}
       style={{
         backgroundColor: 'white',
         color: 'black',
