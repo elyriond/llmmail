@@ -11,14 +11,18 @@ const port = 3000;
 app.use(cors());
 app.use(express.json());
 
-// Image generation routes
-const imageRoutes = require('./routes/imageRoutes');
-app.use('/api', imageRoutes);
-
 // Health check endpoint
 app.get('/', (req, res) => {
   res.json({ message: 'LLM-Mail Backend API', status: 'running' });
 });
+
+// Dressipi routes
+const dressipiRoutes = require('./routes/dressipiRoutes');
+app.use('/api', dressipiRoutes);
+
+// Image generation routes
+const imageRoutes = require('./routes/imageRoutes');
+app.use('/api', imageRoutes);
 
 // Generate email campaign endpoint with SSE progress (WITH CREATIVE DIRECTOR)
 app.post('/api/generate-email', async (req, res) => {
