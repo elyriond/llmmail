@@ -35,8 +35,8 @@ app.post('/api/generate-email', async (req, res) => {
     console.log('🚀 Generating email with Creative Director for:', prompt);
 
     // Get company settings for Creative Director
-    const { clientProfileService } = require('./services/database');
-    const profile = clientProfileService.get();
+    const { brandProfileService } = require('./services/database');
+    const profile = brandProfileService.get();
 
     let companySettings = null;
     if (profile) {
@@ -88,8 +88,8 @@ app.post('/api/generate-email-with-answers', async (req, res) => {
     console.log('🔄 Generating email with user answers...');
 
     // Get company settings
-    const { clientProfileService } = require('./services/database');
-    const profile = clientProfileService.get();
+    const { brandProfileService } = require('./services/database');
+    const profile = brandProfileService.get();
 
     let companySettings = null;
     if (profile) {
